@@ -1,0 +1,109 @@
+### 🛠️ Scripts Generales (`scripts-tiendanube.html`)
+Este archivo contiene todos los códigos JavaScript inyectados en la sección "Códigos externos" de Tiendanube. Incluye 4 funciones principales:
+
+1. **Fix de Filtros:** Define la variable global `offsetcategories` para evitar errores de consola en el catálogo.
+2. **Alerta Navegadores In-App:** Detecta si el cliente abre la tienda desde Instagram o Facebook y muestra un banner amarillo recomendando abrir en el navegador nativo para evitar fallos en el pago.
+3. **Botón de Compra Fijo (Móvil):** Detecta el scroll en celulares y fija el botón de "Agregar al carrito" en la parte inferior de la pantalla cuando el botón original desaparece de la vista.
+4. **Etiqueta "Solo Colchón":** Lee el título del producto y, si es un colchón suelto, inyecta dinámicamente un cartel gráfico en el espacio vacío de la grilla de variantes (acompañado de un plan B de respaldo).
+
+<script>
+  /* Fix Bug Filtros: Define la variable globalmente */
+  if (typeof offsetcategories === "undefined") {
+    window.offsetcategories = window.offsetcategories || 0; 
+  }
+</script>
+
+<script>
+  /* Fix Navegadores In-App: Banner limpio para derivar trafico */
+  document.addEventListener("DOMContentLoaded", function() {
+    var ua = navigator.userAgent || navigator.vendor || window.opera;
+    var isInApp = (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1);
+    
+    if (isInApp) {
+       var banner = document.createElement("div");
+       banner.innerText = "Para una mejor experiencia y evitar errores en el pago, toca los 3 puntitos arriba y elegi Abrir en el navegador externo.";
+       banner.style.background = "#ffeaa7";
+       banner.style.color = "#2d3436";
+       banner.style.textAlign = "center";
+       banner.style.padding = "10px";
+       banner.style.fontSize = "14px";
+       banner.style.position = "relative";
+       banner.style.zIndex = "999999";
+       document.body.prepend(banner);
+    }
+  });
+</script>
+
+
+
+<script>
+  /* Detectar scroll exacto para fijar el boton de compra en celulares */
+  window.addEventListener('scroll', function() {
+    if (window.innerWidth <= 768) {
+      var boton = document.querySelector('input.js-addtocart');
+      if (!boton) return;
+      
+      // Usamos el contenedor que envuelve al botón como punto de referencia anclado
+      var contenedor = boton.parentElement; 
+      var posicion = contenedor.getBoundingClientRect();
+      
+      // Si la base de la caja original subió tanto que desapareció de la pantalla (< 0)
+      if (posicion.bottom < 0) {
+        boton.classList.add('fijo-activo');
+        document.body.classList.add('espacio-boton');
+      } else {
+        boton.classList.remove('fijo-activo');
+        document.body.classList.remove('espacio-boton');
+      }
+    }
+  });
+</script>
+
+
+
+<script>
+window.addEventListener('load', function() {
+    setTimeout(function() { 
+        var tituloElemento = document.querySelector('h1[data-store="product-name"], .js-product-name');
+        
+        if (tituloElemento) {
+            var titulo = tituloElemento.innerText.toLowerCase();
+            
+            // Verifica que sea un colchón suelto
+            if (titulo.includes('colchón') && !titulo.includes('sommier') && !titulo.includes('conjunto') && !titulo.includes('base')) {
+                
+                if (!document.getElementById('etiqueta-lara-masiva')) {
+                    
+                    // 1. Creamos un contenedor flexible para alinear la imagen
+                    var contenedorEtiqueta = document.createElement('div');
+                    contenedorEtiqueta.id = 'etiqueta-lara-masiva';
+                    contenedorEtiqueta.style.display = 'flex';
+                    contenedorEtiqueta.style.alignItems = 'flex-end'; // La alinea abajo, junto al recuadro
+                    contenedorEtiqueta.style.justifyContent = 'center';
+                    contenedorEtiqueta.style.paddingBottom = '5px'; 
+                    
+                    // 2. Creamos la imagen
+                    var etiquetaLara = document.createElement('img');
+                    etiquetaLara.src = 'https://i.postimg.cc/52hL9D5K/Recurso-2-8.png';
+                    etiquetaLara.style.width = '100%';
+                    etiquetaLara.style.maxWidth = '150px';
+                    etiquetaLara.style.objectFit = 'contain';
+                    
+                    contenedorEtiqueta.appendChild(etiquetaLara);
+                    
+                    // 3. Buscamos la grilla de las variantes
+                    var grillaVariantes = document.querySelector('.js-product-variants');
+                    
+                    if (grillaVariantes) {
+                        // Al meterla en la grilla, ocupa automáticamente el 4to espacio vacío
+                        grillaVariantes.appendChild(contenedorEtiqueta);
+                    } else {
+                        // Plan B: si un colchón no tiene variantes, la pone arriba del título
+                        tituloElemento.parentNode.insertBefore(contenedorEtiqueta, tituloElemento);
+                    }
+                }
+            }
+        }
+    }, 800);
+});
+</script>
