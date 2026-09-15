@@ -1,0 +1,142 @@
+### 🎨 Estilos Generales y UI (`estilos-generales.css`)
+Este es el archivo de estilos (CSS) principal que modifica la plantilla nativa de Tiendanube, organizado en 13 bloques clave. Sus funciones principales incluyen:
+
+1. **📦 Caja de Compra y Botones:** 
+   - Habilita un botón de compra flotante en la versión móvil para facilitar la conversión al scrollear.
+   - Reordena lógicamente los elementos del precio, cuotas y descuentos usando `flexbox` y `order`.
+   - Redondea todos los botones de la tienda (`border-radius: 12px`) para una estética más amigable.
+
+2. **💬 Llamados a la Acción (Animaciones):**
+   - Aplica un efecto de "latido" infinito y un tooltip de "¡Consultanos!" al botón de WhatsApp.
+   - Crea un carrusel tipo marquesina infinita en la barra de navegación superior.
+
+3. **🏬 Secciones Personalizadas:**
+   - Inyecta banners promocionales (ej. Cannon Week).
+   - Genera una grilla interactiva (cards) para la sección de sucursales con botones directos a Maps y WhatsApp.
+   - Ajusta los tamaños de los mapas interactivos y recorta márgenes innecesarios.
+
+4. **🧹 Limpieza de Interfaz:**
+   - Oculta marcas de agua de aplicaciones de terceros (Trusty, Opiniones en Línea).
+   - Elimina por completo los códigos `SKU` de las vistas del usuario.
+   - Resuelve conflictos de superposición del cartel "¡Última unidad!" desactivándolo estratégicamente dentro de la página del producto (`.template-product`).
+
+/* 1. BOTÓN DE COMPRA FLOTANTE */
+@media (max-width: 768px) {
+  .js-addtocart.fijo-activo { position: fixed !important; bottom: 15px !important; left: 15px !important; width: calc(100% - 90px) !important; margin: 0 !important; border-radius: 8px !important; z-index: 99999 !important; box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3) !important; }
+  body.espacio-boton { padding-bottom: 90px !important; }
+}
+
+/* 2. ESTILOS DE PRECIOS Y TEXTOS */
+span#price_display, .js-price-display { font-size: 20px !important; }
+span.js-payment-discount-price-product { font-size: 26px !important; font-weight: 900 !important; }
+.js-product-discount-container { display: none !important; }
+
+/* 3. REORDENAMIENTO DE LA CAJA DE COMPRA */
+div:has(> .js-product-payments-container):has(> .js-price-container) { display: flex !important; flex-direction: column !important; }
+div:has(> .js-product-payments-container):has(> .js-price-container) > * { order: 50 !important; }
+div:has(> .js-product-payments-container):has(> .js-price-container) > .breadcrumb, div:has(> .js-product-payments-container):has(> .js-price-container) > .breadcrumbs, div:has(> .js-product-payments-container):has(> .js-price-container) > h1, div:has(> .js-product-payments-container):has(> .js-price-container) > .js-product-name, div:has(> .js-product-payments-container):has(> .js-price-container) > .title-container { order: 1 !important; }
+.js-product-payments-container, .js-price-container { display: contents !important; }
+.product-price-main { order: 10 !important; margin-bottom: 0px !important; padding-bottom: 0px !important; }
+.js-price-without-taxes-container { order: 11 !important; margin-top: -2px !important; margin-bottom: 2px !important; line-height: 1 !important; }
+.js-price-without-taxes-container, .js-price-without-taxes-container span { font-size: 9px !important; }
+.js-max-installments-container { order: 12 !important; margin-top: 0px !important; }
+.js-payment-discount-price-product-container { order: 13 !important; margin-top: 15px !important; margin-bottom: 0px !important; }
+#btn-installments { order: 14 !important; margin-top: 0px !important; }
+
+/* 4. COMPACTAR ENVÍO, LOCAL Y SEGURIDAD */
+.product-shipping-calculator, .js-shipping-calculator-container { margin-bottom: 0px !important; padding-bottom: 0px !important; }
+.js-product-branches-container { margin-top: -15px !important; margin-bottom: 0px !important; padding-top: 0px !important; padding-bottom: 0px !important; }
+.branches-header { margin-top: 0px !important; margin-bottom: 0px !important; padding-bottom: 0px !important; }
+.js-product-branches-container .list-item { padding: 5px 10px !important; margin-bottom: 0px !important; }
+.product-purchase-info { margin-top: -10px !important; margin-bottom: 15px !important; gap: 5px !important; padding-top: 0px !important; }
+
+/* 5. WHATSAPP LLAMATIVO */
+.btn-whatsapp { animation: latido-wpp 2s infinite !important; overflow: visible !important; z-index: 99999 !important; }
+@keyframes latido-wpp { 0% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.7); transform: scale(1); } 70% { box-shadow: 0 0 0 15px rgba(37, 211, 102, 0); transform: scale(1.05); } 100% { box-shadow: 0 0 0 0 rgba(37, 211, 102, 0); transform: scale(1); } }
+.btn-whatsapp::before { content: "¡Consultanos!" !important; position: absolute !important; right: 0px !important; left: auto !important; bottom: calc(100% + 11px) !important; transform: none !important; background: #ffffff !important; color: #333333 !important; padding: 6px 14px !important; border-radius: 20px !important; font-weight: 700 !important; font-size: 14px !important; white-space: nowrap !important; box-shadow: 0 4px 10px rgba(0,0,0,0.2) !important; pointer-events: none !important; display: block !important; animation: saltito-wpp 2s infinite ease-in-out !important; }
+.btn-whatsapp::after { content: "" !important; position: absolute !important; right: 22px !important; left: auto !important; bottom: calc(100% + 5px) !important; transform: none !important; border-width: 6px 6px 0 6px !important; border-style: solid !important; border-color: #ffffff transparent transparent transparent !important; pointer-events: none !important; display: block !important; animation: saltito-wpp 2s infinite ease-in-out !important; }
+@keyframes saltito-wpp { 0%, 100% { margin-bottom: 0px; } 50% { margin-bottom: 6px; } }
+
+/* 6. CARRUSEL AUTOMÁTICO */
+.navigation-bar-group-nav-social { position: absolute !important; left: 0 !important; z-index: 99 !important; background-color: #827c34 !important; padding-left: 15px !important; padding-right: 20px !important; height: 100% !important; display: flex !important; align-items: center !important; }
+.navigation-bar-group-nav-announcements { width: 100% !important; overflow: hidden !important; position: relative !important; display: flex !important; align-items: center !important; z-index: 10 !important; }
+div[data-block-type="nav-announcements"] { display: flex !important; flex-wrap: nowrap !important; white-space: nowrap !important; width: max-content !important; gap: 80px !important; animation: marquesina-infinita 23s linear infinite !important; }
+div[data-block-type="nav-announcements"]:hover { animation-play-state: paused !important; }
+@keyframes marquesina-infinita { 0% { transform: translateX(100%); } 100% { transform: translateX(-100%); } }
+
+/* 7. BOTONES Y ELEMENTOS DE TERCEROS */
+gmp-root, iframe[src*="google.com/shopping"], iframe[src*="customerreviews"] { display: block !important; }
+@media (max-width: 768px) { .template-product gmp-root, .template-product iframe[src*="google.com/shopping"], .template-product iframe[src*="customerreviews"], body[id*="product"] gmp-root, body[id*="product"] iframe { display: none !important; } }
+button, .btn, .button, input[type="submit"], input[type="button"], .js-add-to-cart, .product-buy-container button { border-radius: 12px !important; }
+
+/* 8. CANNON WEEK Y CINTA DE BENEFICIOS */
+#ns-block-heading_19h2 { visibility: hidden !important; position: relative !important; height: 120px !important; display: block !important; }
+#ns-block-heading_19h2::after { content: "" !important; visibility: visible !important; position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; background-image: url('https://i.postimg.cc/P5q0QPv5/imagen-png.png') !important; background-size: contain !important; background-position: center !important; background-repeat: no-repeat !important; }
+@media (max-width: 768px) { #ns-block-heading_19h2 { height: 90px !important; } }
+@media (min-width: 768px) { .flecha-visual { display: none !important; } .mi-carrusel-iconos { overflow-x: hidden; justify-content: space-around; } .icono-item { flex: 1; max-width: 33%; padding: 5px 15px; } }
+
+/* 9. TÍTULOS Y PRODUCTOS */
+#ns-block-complementary_heading, #ns-block-alternative_heading { font-size: 32px !important; }
+@media (max-width: 768px) { #ns-block-complementary_heading, #ns-block-alternative_heading { font-size: 28px !important; } }
+h1.page-header-title { font-size: 32px !important; line-height: 1.2 !important; }
+@media (max-width: 768px) { h1.page-header-title { font-size: 28px !important; } }
+
+/* 10. SUCURSALES */
+.sucursales-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin: 20px auto; max-width: 1200px; }
+.sucursal-card { background: #ffffff; border: 1px solid #eaeaea; border-radius: 12px; padding: 25px 20px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); transition: all 0.3s ease; display: flex; flex-direction: column; position: relative !important; cursor: pointer; }
+.sucursal-card:hover { transform: translateY(-5px); box-shadow: 0 12px 20px rgba(97, 74, 59, 0.15); border-color: #827c34; }
+.sucursal-card > a.card-overlay-link { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; height: 100% !important; z-index: 1 !important; text-indent: -9999px; overflow: hidden; }
+.suc-header { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #827c34; padding-bottom: 15px; margin-bottom: 15px; }
+.suc-header h3 { margin: 0; color: #614a3b; font-size: 20px; font-weight: 700; }
+.suc-body p { display: flex; align-items: flex-start; gap: 10px; margin: 12px 0; color: #555; font-size: 14.5px; line-height: 1.4; }
+.suc-body svg { min-width: 20px; margin-top: 2px; }
+.suc-marcas { background: #f1ebd8; color: #614a3b; font-size: 12px; padding: 5px 10px; border-radius: 8px; display: inline-block; margin-top: 5px; font-weight: bold; }
+.suc-footer { margin-top: auto; padding-top: 20px; display: flex; flex-direction: column; gap: 10px; position: relative !important; z-index: 2 !important; }
+.suc-btn { display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; padding: 12px; border-radius: 12px; font-weight: bold; font-size: 14px; transition: 0.2s; }
+.btn-wsp { background-color: #25D366; color: white !important; }
+.btn-wsp:hover { background-color: #20ba59; }
+.btn-mapa { background-color: transparent !important; color: #614a3b !important; border: 2px solid #614a3b !important; box-sizing: border-box !important; }
+.btn-mapa:hover { background-color: #614a3b !important; color: #ffffff !important; }
+
+/* 11. MAPAS Y MARCAS DE AGUA */
+.mapa-recorte { width: 100% !important; height: 480px !important; border: none !important; margin-top: -60px !important; }
+@media (max-width: 768px) { .mapa-recorte { margin-top: -67px !important; } }
+.reviewsapp a[href*="trusty"], [id^="reviewsapp"] a[href*="opinionenlinea"], .trusty-branding { display: none !important; }
+
+/* 12. CARTEL ÚLTIMA UNIDAD Y SKU */
+.product-item-link { position: relative !important; padding-bottom: 25px !important; }
+
+.js-latest-products-available, .js-last-product, .product-item-stock-notice { position: absolute !important; bottom: 0 !important; left: 0 !important; width: 100% !important; margin: 0 !important; font-size: 0 !important; color: transparent !important; line-height: 0 !important; }
+.js-latest-products-available *, .js-last-product *, .product-item-stock-notice * { display: none !important; }
+.js-latest-products-available::before, .js-last-product::before, .product-item-stock-notice::before { content: "¡Última unidad!" !important; font-size: 13px !important; color: #c9732b !important; font-weight: bold !important; line-height: normal !important; display: block !important; }
+
+/* 13. APAGAR CARTELES Y SKU DENTRO DEL PRODUCTO */
+.template-product .js-latest-products-available,
+.template-product .js-last-product,
+.template-product .product-item-stock-notice,
+.template-product .js-stock-label-private,
+.template-product [data-store="product-item-label-stock"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  position: static !important;
+}
+
+.template-product .js-latest-products-available::before, 
+.template-product .js-last-product::before, 
+.template-product .product-item-stock-notice::before { 
+  content: none !important;
+  display: none !important;
+}
+
+/* Ocultar SKU */
+.template-product .js-product-sku,
+.template-product .product-sku,
+.template-product [data-store="product-sku"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
