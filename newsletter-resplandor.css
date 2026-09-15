@@ -1,0 +1,46 @@
+### 💡 Resplandor Animado en Newsletter (`newsletter-resplandor.css`)
+Código CSS diseñado para incrementar la tasa de conversión (captura de emails) atrayendo la mirada del usuario de forma sutil:
+
+1. **Gota de Luz (Glow):** Crea un gradiente radial con los colores de la marca que se inyecta dinámicamente detrás del formulario de suscripción.
+2. **Efecto de Latido:** Utiliza animaciones por fotogramas (`@keyframes`) para hacer que la luz palpite de forma constante, modificando su escala y opacidad cada 3 segundos.
+3. **Control de Capas (Z-Index):** Eleva virtualmente los campos de texto y el botón para asegurar que la capa de luz no bloquee los clics del cliente ni interfiera con la escritura del email.
+
+/* 13. GOTA DE LUZ ANIMADA EN NEWSLETTER (VERSIÓN LLAMATIVA) */
+.newsletter-align-center { 
+  position: relative !important; 
+}
+
+/* Creamos la luz con un color base más intenso y animación más rápida */
+.newsletter-align-center::after { 
+  content: "" !important; 
+  position: absolute !important; 
+  top: 50% !important; 
+  left: 50% !important; 
+  transform: translate(-50%, -50%) !important; 
+  width: 100vw !important; 
+  height: 600px !important; 
+  /* Subimos la intensidad del naranja de 0.22 a 0.35 */
+  background: radial-gradient(circle, rgba(201, 115, 43, 0.35) 0%, transparent 65%) !important; 
+  z-index: 0 !important; 
+  pointer-events: none !important; 
+  /* Bajamos el tiempo a 2.5s para que palpite rápido */
+  animation: latido-luz-fuerte 3s ease-in-out infinite !important; 
+}
+
+/* Levantamos el título, el texto y el formulario */
+.newsletter-align-center > * { 
+  position: relative !important; 
+  z-index: 2 !important; 
+}
+
+/* Motor de la animación: mayor diferencia de tamaño y opacidad */
+@keyframes latido-luz-fuerte { 
+  0%, 100% { 
+    transform: translate(-50%, -50%) scale(0.9); 
+    opacity: 0.4; /* Arranca más apagado */
+  } 
+  50% { 
+    transform: translate(-50%, -50%) scale(1.3); /* Crece un 30% */
+    opacity: 1; /* Brilla al máximo */
+  } 
+}
