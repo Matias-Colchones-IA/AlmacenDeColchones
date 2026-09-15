@@ -70,11 +70,12 @@ window.addEventListener('load', function() {
         if (tituloElemento) {
             var titulo = tituloElemento.innerText.toLowerCase();
             
-            // Regla 1: Colchón suelto
+            // Regla 1: Colchón suelto (Escudo activado contra "protector")
             var esColchonSuelto = (titulo.includes('colchón') || titulo.includes('colchon')) && 
                                   !titulo.includes('sommier') && 
                                   !titulo.includes('conjunto') && 
-                                  !titulo.includes('base');
+                                  !titulo.includes('base') &&
+                                  !titulo.includes('protector'); // ¡Acá está la nueva excepción!
             
             // Regla 2: Conjunto o Marinera (Escudo activado contra los "cubre")
             var esConjunto = (titulo.includes('sommier') || titulo.includes('marinera') || titulo.includes('marinero')) && 
