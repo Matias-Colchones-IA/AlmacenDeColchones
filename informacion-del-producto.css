@@ -1,0 +1,29 @@
+### 🏷️ Variantes como Etiquetas Estáticas (`variantes-estaticas.css`)
+Código CSS que modifica el comportamiento nativo de los selectores de opciones (`<select>`) en la página del producto. Se utiliza para mostrar características técnicas o avisos (ej. "Incluye: Solo Colchón") usando el sistema de variantes de Tiendanube, pero bloqueando su interacción:
+
+1. **Desactivación de Clics:** Aplica `pointer-events: none` para que el usuario no pueda hacer clic ni intentar desplegar el menú.
+2. **Limpieza Visual:** Elimina las flechas desplegables nativas del sistema operativo (`appearance: none`) y oculta los iconos SVG de chevron inyectados por la plantilla.
+3. **Diseño de Insignia (Badge):** Convierte el selector en una caja estática con fondo gris sutil (`#f9f9f9`), borde delicado y texto centrado, dándole un aspecto de "etiqueta técnica" inamovible.
+
+/* Transformar variantes únicas en etiquetas estáticas */
+.js-product-variants select,
+div[data-store="product-variants"] select,
+.product-variants select {
+  pointer-events: none !important; /* Desactiva el clic */
+  -webkit-appearance: none !important; /* Borra el formato de sistema operativo */
+  appearance: none !important;
+  background-image: none !important; /* Quita la flecha nativa */
+  background-color: #f9f9f9 !important; /* Fondo gris muy sutil */
+  border: 1px solid #e0e0e0 !important; /* Borde delicado */
+  padding: 10px 15px !important;
+  text-align: center !important;
+  font-weight: 500 !important;
+  color: #333 !important;
+}
+
+/* Ocultar el ícono de la flecha insertado por el diseño */
+.js-product-variants svg,
+.js-product-variants .icon-chevron-down,
+div[data-store="product-variants"] svg {
+  display: none !important;
+}
