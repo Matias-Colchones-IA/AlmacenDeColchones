@@ -1,0 +1,88 @@
+### 🛡️ Carrusel de Beneficios y Botones (`carrusel-beneficios.css`)
+Estilos para un banner de información técnica (envíos, cuotas, seguridad) creado íntegramente en código puro para optimizar la velocidad de carga, sumado a ajustes de UI:
+
+1. **Carrusel Responsivo:** En celulares funciona como un carrusel táctil deslizable (`scroll-snap`), mientras que en computadoras se adapta automáticamente mostrando los ítems distribuidos en columnas fijas.
+2. **Flechas Animadas (Móvil):** Implementa flechas laterales con un efecto de "latido" (pulsación infinita) visible solo en celulares, indicando intuitivamente al usuario que puede deslizar hacia los costados.
+3. **Botones Redondeados (Global):** Estandariza el diseño general de la tienda suavizando las esquinas (`border-radius: 12px`) de absolutamente todos los botones interactivos (comprar, enviar, landing pages, etc.).
+
+/* =========================================
+   ESTILOS CARRUSEL DE ICONOS + BOTONES REDONDEADOS
+   ========================================= */
+
+/* Contenedor general */
+.carrusel-wrapper {
+  position: relative;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 0;
+}
+
+/* Flechas a los costados */
+.flecha-visual {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  animation: latido 2s infinite;
+  z-index: 10;
+}
+.flecha-izq { left: 5px; }
+.flecha-der { right: 5px; }
+
+@keyframes latido {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.9; }
+}
+
+/* Contenedor del carrusel */
+.mi-carrusel-iconos {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.mi-carrusel-iconos::-webkit-scrollbar {
+  display: none;
+}
+
+/* Cada ítem individual */
+.icono-item {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  text-align: center;
+  padding: 5px 35px;
+  box-sizing: border-box;
+}
+
+/* Textos e íconos (Letras en marrón #614a3b) */
+.icono-svg { margin-bottom: 4px; display: inline-block; }
+.icono-titulo { font-size: 16px; font-weight: bold; color: #614a3b; margin-bottom: 2px; }
+.icono-texto { font-size: 13px; color: #614a3b; opacity: 0.85; }
+
+/* REDONDEAR LAS PUNTAS DE LOS BOTONES EN GENERAL Y DE LA LANDING */
+button, 
+.btn, 
+.button, 
+input[type="submit"], 
+input[type="button"],
+.js-add-to-cart,
+.product-buy-container button {
+  border-radius: 12px !important; /* Ajustá a 8px si los querés más sutiles o 20px si los querés bien ovalados */
+}
+
+/* COMPUTADORAS */
+@media (min-width: 768px) {
+  .flecha-visual {
+    display: none !important;
+  }
+  .mi-carrusel-iconos {
+    overflow-x: hidden;
+    justify-content: space-around;
+  }
+  .icono-item {
+    flex: 1;
+    max-width: 33%;
+    padding: 5px 15px;
+  }
+}
