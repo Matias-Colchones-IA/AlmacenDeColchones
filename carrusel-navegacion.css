@@ -1,0 +1,51 @@
+### 🎠 Carrusel de Anuncios (`carrusel-navegacion.css`)
+Estilos CSS aplicados a la barra de navegación superior para darle movimiento a los textos promocionales (envíos, cuotas, etc.). Incluye:
+
+1. **Anclaje de Redes Sociales:** Fija los iconos a la izquierda con un fondo sólido para que el texto de los anuncios se deslice limpiamente por detrás sin superponerse.
+2. **Animación Infinita (Marquesina):** Fuerza los anuncios a mantenerse en una sola línea y aplica un desplazamiento lateral continuo y suave.
+3. **Pausa Interactiva:** Detiene automáticamente la animación cuando el usuario posiciona el cursor (hover) sobre la barra para facilitar la lectura.
+
+/* =========================================
+   CARRUSEL AUTOMÁTICO - BARRA DE NAVEGACIÓN
+   ========================================= */
+
+/* 1. Fija las redes sociales a la izquierda con fondo para que el texto pase por debajo limpiamente */
+.navigation-bar-group-nav-social {
+  position: absolute;
+  left: 15px;
+  z-index: 10;
+  background-color: #614a3b;
+  padding-right: 15px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+/* 2. Prepara el contenedor para que el texto no expanda la página */
+.navigation-bar-group-nav-announcements {
+  width: 100%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+/* 3. Aplica la animación y fuerza los textos a una sola línea */
+div[data-block-type="nav-announcements"] {
+  display: flex;
+  flex-wrap: nowrap !important;
+  white-space: nowrap;
+  gap: 50px !important; 
+  /* Aumentamos a 120s para que vaya mucho más lento */
+  animation: marquesina-infinita 300s linear infinite; 
+}
+
+/* 4. Frena el carrusel cuando el cliente apoya el mouse */
+div[data-block-type="nav-announcements"]:hover {
+  animation-play-state: paused;
+}
+
+/* 5. El motor del movimiento */
+@keyframes marquesina-infinita {
+  0% { transform: translateX(100vw); }
+  100% { transform: translateX(-100%); }
+}
