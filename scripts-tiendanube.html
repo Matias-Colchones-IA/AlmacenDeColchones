@@ -1,10 +1,11 @@
-### 🛠️ Scripts Generales (`scripts-tiendanube.html`)
-Este archivo contiene todos los códigos JavaScript inyectados en la sección "Códigos externos" de Tiendanube. Incluye 4 funciones principales:
+### 🏷️ Etiquetas Dinámicas Multiproducto (`etiqueta-dinamica.js`)
+Script inteligente que analiza en tiempo real el título de la página del producto para inyectar insignias gráficas aclaratorias y evitar confusiones en los clientes.
 
-1. **Fix de Filtros:** Define la variable global `offsetcategories` para evitar errores de consola en el catálogo.
-2. **Alerta Navegadores In-App:** Detecta si el cliente abre la tienda desde Instagram o Facebook y muestra un banner amarillo recomendando abrir en el navegador nativo para evitar fallos en el pago.
-3. **Botón de Compra Fijo (Móvil):** Detecta el scroll en celulares y fija el botón de "Agregar al carrito" en la parte inferior de la pantalla cuando el botón original desaparece de la vista.
-4. **Etiqueta "Solo Colchón":** Lee el título del producto y, si es un colchón suelto, inyecta dinámicamente un cartel gráfico en el espacio vacío de la grilla de variantes (acompañado de un plan B de respaldo).
+1. **Detección Condicional Doble:**
+   - **Regla Colchón:** Si contiene "colchón" y no es sommier/base, inyecta la etiqueta marrón "Base no incluida".
+   - **Regla Conjunto:** Si contiene "sommier" o "marinera/o", inyecta la etiqueta verde "Conjunto (colchón + base)".
+2. **Escudos Anti-Falsos Positivos:** Uso intensivo del operador de negación `!includes()` para bloquear falsos positivos (ej. bloquea la etiqueta de conjunto si el título dice "cubre sommier").
+3. **Inyección unificada:** Mantiene la misma lógica de inyección DOM (cuarto slot vacío en la grilla de variantes o encima del título principal) optimizando la carga en un solo script.
 
 <script>
   /* Fix Bug Filtros: Define la variable globalmente */
@@ -101,6 +102,66 @@ window.addEventListener('load', function() {
                         // Plan B: si un colchón no tiene variantes, la pone arriba del título
                         tituloElemento.parentNode.insertBefore(contenedorEtiqueta, tituloElemento);
                     }
+                }
+            }
+        }
+    }, 800);
+});
+</script>
+
+<script>
+window.addEventListener('load', function() {
+    setTimeout(function() { 
+        var tituloElemento = document.querySelector('h1[data-store="product-name"], .js-product-name');
+        
+        if (tituloElemento) {
+            var titulo = tituloElemento.innerText.toLowerCase();
+            
+            // Regla 1: Colchón suelto
+            var esColchonSuelto = (titulo.includes('colchón') || titulo.includes('colchon')) && 
+                                  !titulo.includes('sommier') && 
+                                  !titulo.includes('conjunto') && 
+                                  !titulo.includes('base');
+            
+            // Regla 2: Conjunto o Marinera (Escudo activado contra los "cubre")
+            var esConjunto = (titulo.includes('sommier') || titulo.includes('marinera') || titulo.includes('marinero')) && 
+                             !titulo.includes('cubre'); 
+
+            var urlImagen = "";
+
+            // Asignamos la imagen según qué regla se cumplió
+            if (esColchonSuelto) {
+                urlImagen = 'https://i.postimg.cc/52hL9D5K/Recurso-2-8.png'; // La etiqueta marrón
+            } else if (esConjunto) {
+                urlImagen = 'https://i.postimg.cc/sgcnFyGk/Recurso-1-8.png'; // La etiqueta verde
+            }
+
+            // Si encontró alguna de las dos y todavía no dibujamos la etiqueta...
+            if (urlImagen !== "" && !document.getElementById('etiqueta-dinamica-masiva')) {
+                
+                // 1. Contenedor flexible
+                var contenedorEtiqueta = document.createElement('div');
+                contenedorEtiqueta.id = 'etiqueta-dinamica-masiva';
+                contenedorEtiqueta.style.display = 'flex';
+                contenedorEtiqueta.style.alignItems = 'flex-end'; 
+                contenedorEtiqueta.style.justifyContent = 'center';
+                contenedorEtiqueta.style.paddingBottom = '5px'; 
+                
+                // 2. La imagen correspondiente
+                var etiquetaImg = document.createElement('img');
+                etiquetaImg.src = urlImagen;
+                etiquetaImg.style.width = '100%';
+                etiquetaImg.style.maxWidth = '150px';
+                etiquetaImg.style.objectFit = 'contain';
+                
+                contenedorEtiqueta.appendChild(etiquetaImg);
+                
+                // 3. Ubicación en la grilla
+                var grillaVariantes = document.querySelector('.js-product-variants');
+                if (grillaVariantes) {
+                    grillaVariantes.appendChild(contenedorEtiqueta);
+                } else {
+                    tituloElemento.parentNode.insertBefore(contenedorEtiqueta, tituloElemento);
                 }
             }
         }
