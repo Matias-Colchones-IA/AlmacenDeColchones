@@ -1,0 +1,31 @@
+### 🖼️ Botones en Banners Promocionales (`banner-botones.css`)
+Reglas de estilo (CSS) aplicadas para optimizar la visibilidad y tasa de clics de los botones superpuestos en imágenes (ej. banner "Ver ofertas Cannon"):
+
+1. **Ajuste de Posición:** Eleva el botón ligeramente (`top: -25px`) para separarlo del borde inferior y lo centra perfectamente en cualquier dispositivo.
+2. **Escalado Responsivo:** Aumenta estratégicamente el relleno (`padding`) y el tamaño de la fuente en computadoras de escritorio (pantallas mayores a 768px) para ganar protagonismo, manteniendo un diseño compacto y prolijo en la versión móvil.
+
+/* 1. Posición base (se aplica tanto a celular como a PC) */
+.banner-container .btn, 
+div[data-store*="banner"] .btn, 
+[data-block-type="button"] a,
+[data-block-type="button"] {
+  position: relative !important;
+  top: -25px !important;
+  left: 0 !important;
+  right: 0 !important;
+  margin: 0 auto !important;
+  display: block !important; 
+  width: max-content !important; 
+  z-index: 20 !important;
+}
+
+/* 2. Tamaño y diseño SOLO para computadoras (pantallas mayores a 768px) */
+@media (min-width: 769px) {
+  .banner-container .btn, 
+  div[data-store*="banner"] .btn, 
+  [data-block-type="button"] a,
+  [data-block-type="button"] {
+    padding: 14px 30px !important; /* Hace el botón más alto y mucho más ancho */
+    font-size: 16px !important;    /* Agranda el tamaño de la letra */
+  }
+}
