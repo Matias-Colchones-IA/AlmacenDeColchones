@@ -61,39 +61,42 @@ Script inteligente que analiza en tiempo real el título de la página del produ
 </script>
 
 
-
 <script>
 window.addEventListener('load', function() {
     setTimeout(function() { 
+        // 1. Buscamos la "miga de pan" (ej: Inicio > Colchones > 2 Plazas) y el título
+        var breadcrumb = document.querySelector('.breadcrumb, .breadcrumbs, [data-store="product-breadcrumb"]');
         var tituloElemento = document.querySelector('h1[data-store="product-name"], .js-product-name');
         
-        if (tituloElemento) {
-            var titulo = tituloElemento.innerText.toLowerCase();
+        if (breadcrumb && tituloElemento) {
+            // Pasamos la ruta de categorías a minúsculas
+            var categorias = breadcrumb.innerText.toLowerCase();
             
-            // Regla 1: Colchón suelto (Escudo activado contra "protector")
-            var esColchonSuelto = (titulo.includes('colchón') || titulo.includes('colchon')) && 
-                                  !titulo.includes('sommier') && 
-                                  !titulo.includes('conjunto') && 
-                                  !titulo.includes('base') &&
-                                  !titulo.includes('protector'); // ¡Acá está la nueva excepción!
+            // Regla 1: Colchón suelto
+            // Se activa si la categoría incluye "colchones", pero se BLOQUEA si pertenece a blanquería, sommiers o bases.
+            var esCategoriaColchon = (categorias.includes('colchones') || categorias.includes('colchón') || categorias.includes('colchon')) && 
+                                     !categorias.includes('sommiers') && 
+                                     !categorias.includes('blanquería') && 
+                                     !categorias.includes('blanqueria') &&
+                                     !categorias.includes('bases') &&
+                                     !categorias.includes('almohadas');
             
-            // Regla 2: Conjunto o Marinera (Escudo activado contra los "cubre")
-            var esConjunto = (titulo.includes('sommier') || titulo.includes('marinera') || titulo.includes('marinero')) && 
-                             !titulo.includes('cubre'); 
+            // Regla 2: Conjunto (Sommiers / Marineras)
+            // Se activa simplemente si la ruta incluye la categoría principal "sommiers"
+            var esCategoriaConjunto = categorias.includes('sommiers');
 
             var urlImagen = "";
 
-            // Asignamos la imagen según qué regla se cumplió
-            if (esColchonSuelto) {
-                urlImagen = 'https://i.postimg.cc/52hL9D5K/Recurso-2-8.png'; // La etiqueta marrón
-            } else if (esConjunto) {
-                urlImagen = 'https://i.postimg.cc/sgcnFyGk/Recurso-1-8.png'; // La etiqueta verde
+            // Asignamos la imagen correspondiente
+            if (esCategoriaColchon) {
+                urlImagen = 'https://i.postimg.cc/52hL9D5K/Recurso-2-8.png'; // Etiqueta marrón (Solo colchón)
+            } else if (esCategoriaConjunto) {
+                urlImagen = 'https://i.postimg.cc/sgcnFyGk/Recurso-1-8.png'; // Etiqueta verde (Conjunto)
             }
 
-            // Si encontró alguna de las dos y todavía no dibujamos la etiqueta...
+            // Inyectamos la imagen si cumple alguna regla y si no existe previamente
             if (urlImagen !== "" && !document.getElementById('etiqueta-dinamica-masiva')) {
                 
-                // 1. Contenedor flexible
                 var contenedorEtiqueta = document.createElement('div');
                 contenedorEtiqueta.id = 'etiqueta-dinamica-masiva';
                 contenedorEtiqueta.style.display = 'flex';
@@ -101,7 +104,6 @@ window.addEventListener('load', function() {
                 contenedorEtiqueta.style.justifyContent = 'center';
                 contenedorEtiqueta.style.paddingBottom = '5px'; 
                 
-                // 2. La imagen correspondiente
                 var etiquetaImg = document.createElement('img');
                 etiquetaImg.src = urlImagen;
                 etiquetaImg.style.width = '100%';
@@ -110,7 +112,6 @@ window.addEventListener('load', function() {
                 
                 contenedorEtiqueta.appendChild(etiquetaImg);
                 
-                // 3. Ubicación en la grilla
                 var grillaVariantes = document.querySelector('.js-product-variants');
                 if (grillaVariantes) {
                     grillaVariantes.appendChild(contenedorEtiqueta);
