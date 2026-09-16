@@ -28,7 +28,6 @@ Este es el archivo de estilos (CSS) principal que modifica la plantilla nativa d
 
 /* 2. ESTILOS DE PRECIOS Y TEXTOS */
 span#price_display, .js-price-display { font-size: 20px !important; }
-span.js-payment-discount-price-product { font-size: 26px !important; font-weight: 900 !important; }
 .js-product-discount-container { display: none !important; }
 
 /* 3. REORDENAMIENTO DE LA CAJA DE COMPRA */
@@ -105,38 +104,16 @@ h1.page-header-title { font-size: 32px !important; line-height: 1.2 !important; 
 
 /* 12. CARTEL ÚLTIMA UNIDAD Y SKU */
 .product-item-link { position: relative !important; padding-bottom: 25px !important; }
-
 .js-latest-products-available, .js-last-product, .product-item-stock-notice { position: absolute !important; bottom: 0 !important; left: 0 !important; width: 100% !important; margin: 0 !important; font-size: 0 !important; color: transparent !important; line-height: 0 !important; }
 .js-latest-products-available *, .js-last-product *, .product-item-stock-notice * { display: none !important; }
 .js-latest-products-available::before, .js-last-product::before, .product-item-stock-notice::before { content: "¡Última unidad!" !important; font-size: 13px !important; color: #c9732b !important; font-weight: bold !important; line-height: normal !important; display: block !important; }
 
 /* 13. APAGAR CARTELES Y SKU DENTRO DEL PRODUCTO */
-.template-product .js-latest-products-available,
-.template-product .js-last-product,
-.template-product .product-item-stock-notice,
-.template-product .js-stock-label-private,
-.template-product [data-store="product-item-label-stock"] {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  position: static !important;
-}
+.template-product .js-latest-products-available, .template-product .js-last-product, .template-product .product-item-stock-notice, .template-product .js-stock-label-private, .template-product [data-store="product-item-label-stock"] { display: none !important; opacity: 0 !important; visibility: hidden !important; position: static !important; }
+.template-product .js-latest-products-available::before, .template-product .js-last-product::before, .template-product .product-item-stock-notice::before { content: none !important; display: none !important; }
+.template-product .js-product-sku, .template-product .product-sku, .template-product [data-store="product-sku"] { display: none !important; opacity: 0 !important; visibility: hidden !important; height: 0 !important; margin: 0 !important; padding: 0 !important; }
 
-.template-product .js-latest-products-available::before, 
-.template-product .js-last-product::before, 
-.template-product .product-item-stock-notice::before { 
-  content: none !important;
-  display: none !important;
-}
-
-/* Ocultar SKU */
-.template-product .js-product-sku,
-.template-product .product-sku,
-.template-product [data-store="product-sku"] {
-  display: none !important;
-  opacity: 0 !important;
-  visibility: hidden !important;
-  height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-}
+/* 14. LIMPIEZA TEXTO TRANSFERENCIA */
+.js-payment-discount-price-product-container { font-size: 0 !important; }
+span.js-payment-discount-price-product { font-size: 26px !important; font-weight: 900 !important; display: block !important; }
+.js-payment-discount-price-product-container::after { content: "Transferencia" !important; font-size: 15px !important; color: #827c34 !important; font-weight: 600 !important; display: block !important; margin-top: 3px !important; }
