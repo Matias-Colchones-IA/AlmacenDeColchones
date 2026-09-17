@@ -7,119 +7,241 @@ Script inteligente que analiza en tiempo real el título de la página del produ
 2. **Escudos Anti-Falsos Positivos:** Uso intensivo del operador de negación `!includes()` para bloquear falsos positivos (ej. bloquea la etiqueta de conjunto si el título dice "cubre sommier").
 3. **Inyección unificada:** Mantiene la misma lógica de inyección DOM (cuarto slot vacío en la grilla de variantes o encima del título principal) optimizando la carga en un solo script.
 
-<script>
-  /* Fix Bug Filtros: Define la variable globalmente */
-  if (typeof offsetcategories === "undefined") {
-    window.offsetcategories = window.offsetcategories || 0; 
-  }
-</script>
+<!-- =======================================================
+     CUESTIONARIO RECOMENDADOR DE COLCHONES (COMPLETO)
+     ======================================================= -->
 
-<script>
-  /* Fix Navegadores In-App: Banner limpio para derivar trafico */
-  document.addEventListener("DOMContentLoaded", function() {
-    var ua = navigator.userAgent || navigator.vendor || window.opera;
-    var isInApp = (ua.indexOf("FBAN") > -1) || (ua.indexOf("FBAV") > -1) || (ua.indexOf("Instagram") > -1);
-    
-    if (isInApp) {
-       var banner = document.createElement("div");
-       banner.innerText = "Para una mejor experiencia y evitar errores en el pago, toca los 3 puntitos arriba y elegi Abrir en el navegador externo.";
-       banner.style.background = "#ffeaa7";
-       banner.style.color = "#2d3436";
-       banner.style.textAlign = "center";
-       banner.style.padding = "10px";
-       banner.style.fontSize = "14px";
-       banner.style.position = "relative";
-       banner.style.zIndex = "999999";
-       document.body.prepend(banner);
-    }
-  });
-</script>
+<!-- 1. EL BOTÓN FLOTANTE QUE ABRE EL TEST -->
+<div id="btn-abrir-test" style="position: fixed; bottom: 125px; right: 15px; background: #614a3b; color: white; padding: 12px 18px; border-radius: 30px; cursor: pointer; z-index: 99998; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-weight: bold; font-family: sans-serif; display: flex; align-items: center; gap: 8px; font-size: 14px; transition: transform 0.2s;">
+   Encontrá tu colchón ideal
+</div>
 
+<!-- 2. LA VENTANA EMERGENTE (MODAL) -->
+<div id="modal-test" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.75); z-index: 999999; justify-content: center; align-items: center; font-family: sans-serif; backdrop-filter: blur(3px);">
+    <div style="background: white; width: 90%; max-width: 450px; border-radius: 16px; padding: 30px; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+        <span id="cerrar-test" style="position: absolute; top: 15px; right: 20px; font-size: 26px; cursor: pointer; color: #999; font-weight: bold;">&times;</span>
+        
+        <h3 style="color: #614a3b; text-align: center; margin-top: 0; font-size: 20px; font-weight: 800; border-bottom: 2px solid #f1ebd8; padding-bottom: 15px; margin-bottom: 20px;">
+            Asesor Virtual
+        </h3>
+        
+        <!-- Acá adentro JavaScript va a ir dibujando las preguntas -->
+        <div id="quiz-contenido" style="min-height: 200px;"></div>
+        
+        <!-- Botonera de navegación -->
+        <div style="display: flex; justify-content: space-between; margin-top: 25px;">
+            <button id="btn-test-prev" style="visibility: hidden; background: #eaeaea; color: #555; border: none; padding: 10px 15px; border-radius: 8px; cursor: pointer; font-weight: bold;">← Atrás</button>
+            <button id="btn-test-next" style="display: none; background: #827c34; color: white; border: none; padding: 10px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 15px;">Siguiente →</button>
+            <button id="btn-test-final" style="display: none; background: #c9732b; color: white; border: none; padding: 10px 25px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 15px;">Ver resultados</button>
+        </div>
+    </div>
+</div>
 
+<!-- 3. LOS ESTILOS DE LOS BOTONES DEL TEST -->
+<style>
+    #btn-abrir-test:hover { transform: scale(1.05); }
+    .quiz-opcion { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; margin-bottom: 12px; border: 2px solid #eaeaea; border-radius: 12px; background: white; cursor: pointer; text-align: left; font-size: 15px; color: #333; font-weight: 600; transition: all 0.2s ease; }
+    .quiz-opcion:hover { border-color: #827c34; background: #fcfbf8; }
+    .quiz-opcion.seleccionada { border-color: #827c34; background: #f1ebd8; box-shadow: 0 4px 0 #827c34; transform: translateY(-2px); }
+</style>
 
-<script>
-  /* Detectar scroll exacto para fijar el boton de compra en celulares */
-  window.addEventListener('scroll', function() {
-    if (window.innerWidth <= 768) {
-      var boton = document.querySelector('input.js-addtocart');
-      if (!boton) return;
-      
-      // Usamos el contenedor que envuelve al botón como punto de referencia anclado
-      var contenedor = boton.parentElement; 
-      var posicion = contenedor.getBoundingClientRect();
-      
-      // Si la base de la caja original subió tanto que desapareció de la pantalla (< 0)
-      if (posicion.bottom < 0) {
-        boton.classList.add('fijo-activo');
-        document.body.classList.add('espacio-boton');
-      } else {
-        boton.classList.remove('fijo-activo');
-        document.body.classList.remove('espacio-boton');
-      }
-    }
-  });
-</script>
-
-
+<!-- 4. EL CEREBRO DEL CUESTIONARIO (JAVASCRIPT) -->
 <script>
 window.addEventListener('load', function() {
-    setTimeout(function() { 
-        // 1. Buscamos la "miga de pan" (ej: Inicio > Colchones > 2 Plazas) y el título
-        var breadcrumb = document.querySelector('.breadcrumb, .breadcrumbs, [data-store="product-breadcrumb"]');
-        var tituloElemento = document.querySelector('h1[data-store="product-name"], .js-product-name');
-        
-        if (breadcrumb && tituloElemento) {
-            // Pasamos la ruta de categorías a minúsculas
-            var categorias = breadcrumb.innerText.toLowerCase();
-            
-            // Regla 1: Colchón suelto
-            // Se activa si la categoría incluye "colchones", pero se BLOQUEA si pertenece a blanquería, sommiers o bases.
-            var esCategoriaColchon = (categorias.includes('colchones') || categorias.includes('colchón') || categorias.includes('colchon')) && 
-                                     !categorias.includes('sommiers') && 
-                                     !categorias.includes('blanquería') && 
-                                     !categorias.includes('blanqueria') &&
-                                     !categorias.includes('bases') &&
-                                     !categorias.includes('almohadas');
-            
-            // Regla 2: Conjunto (Sommiers / Marineras)
-            // Se activa simplemente si la ruta incluye la categoría principal "sommiers"
-            var esCategoriaConjunto = categorias.includes('sommiers');
-
-            var urlImagen = "";
-
-            // Asignamos la imagen correspondiente
-            if (esCategoriaColchon) {
-                urlImagen = 'https://i.postimg.cc/52hL9D5K/Recurso-2-8.png'; // Etiqueta marrón (Solo colchón)
-            } else if (esCategoriaConjunto) {
-                urlImagen = 'https://i.postimg.cc/sgcnFyGk/Recurso-1-8.png'; // Etiqueta verde (Conjunto)
-            }
-
-            // Inyectamos la imagen si cumple alguna regla y si no existe previamente
-            if (urlImagen !== "" && !document.getElementById('etiqueta-dinamica-masiva')) {
-                
-                var contenedorEtiqueta = document.createElement('div');
-                contenedorEtiqueta.id = 'etiqueta-dinamica-masiva';
-                contenedorEtiqueta.style.display = 'flex';
-                contenedorEtiqueta.style.alignItems = 'flex-end'; 
-                contenedorEtiqueta.style.justifyContent = 'center';
-                contenedorEtiqueta.style.paddingBottom = '5px'; 
-                
-                var etiquetaImg = document.createElement('img');
-                etiquetaImg.src = urlImagen;
-                etiquetaImg.style.width = '100%';
-                etiquetaImg.style.maxWidth = '150px';
-                etiquetaImg.style.objectFit = 'contain';
-                
-                contenedorEtiqueta.appendChild(etiquetaImg);
-                
-                var grillaVariantes = document.querySelector('.js-product-variants');
-                if (grillaVariantes) {
-                    grillaVariantes.appendChild(contenedorEtiqueta);
-                } else {
-                    tituloElemento.parentNode.insertBefore(contenedorEtiqueta, tituloElemento);
-                }
-            }
+    
+    // --- A. LAS PREGUNTAS ENVIADAS POR LA SUCURSAL ---
+    const preguntas = [
+        {
+            id: 'medida',
+            titulo: '1. ¿Qué medida de colchón estás buscando?',
+            tipo: 'unica',
+            opciones: [
+                { valor: '1plaza', texto: '1 plaza (190x80)' },
+                { valor: '1ymedia', texto: '1½ plazas (190x90, 190x100)' },
+                { valor: '2plazas', texto: '2 plazas (190x130, 190x140)' },
+                { valor: '2ymedia', texto: '2½ plazas (190x150, 190x160)' },
+                { valor: 'queen', texto: 'Queen (200x160)' },
+                { valor: 'king', texto: 'King (200x180, 200x200)' }
+            ]
+        },
+        {
+            id: 'tipo',
+            titulo: '2. ¿Qué estás buscando?',
+            tipo: 'unica',
+            opciones: [
+                { valor: 'solo', texto: 'Solo colchón' },
+                { valor: 'conjunto', texto: 'Colchón + Base Sommier' }
+            ]
+        },
+        {
+            id: 'firmeza',
+            titulo: '3. ¿Cómo te gustaría que se sienta tu colchón?',
+            tipo: 'unica',
+            opciones: [
+                { valor: 'suave', texto: '<b>Suave</b><br><span style="font-size:12px; font-weight:normal;">Mayor adaptación al cuerpo y sensación mullida. Generalmente resortes.</span>' },
+                { valor: 'intermedio', texto: '<b>Intermedio</b><br><span style="font-size:12px; font-weight:normal;">Equilibrio entre confort y soporte. Ideal punto medio. Híbridos.</span>' },
+                { valor: 'firme', texto: '<b>Firme</b><br><span style="font-size:12px; font-weight:normal;">Mayor sostén y menor hundimiento. Espuma de alta densidad.</span>' },
+                { valor: 'duda', texto: '<b>No estoy seguro/a</b><br><span style="font-size:12px; font-weight:normal;">¡Te damos una mano asesorándote!</span>' }
+            ]
+        },
+        {
+            id: 'mejora',
+            titulo: '4. ¿Qué te gustaría mejorar de tu colchón actual?<br><span style="font-size:12px; font-weight:normal;">(Podés seleccionar más de una)</span>',
+            tipo: 'multiple',
+            opciones: [
+                { valor: 'hundo', texto: 'Me hundo demasiado' },
+                { valor: 'firme', texto: 'Lo siento demasiado firme' },
+                { valor: 'movimientos', texto: 'Que se sientan menos los movimientos' },
+                { valor: 'soporte', texto: 'Quiero mayor soporte para espalda/cuello' },
+                { valor: 'calor', texto: 'Siento demasiado calor al dormir' },
+                { valor: 'nada', texto: 'No tengo ningún problema, quiero cambiarlo' }
+            ]
+        },
+        {
+            id: 'peso',
+            titulo: '5. ¿Qué soporte de peso necesitás?',
+            tipo: 'rango',
+            textoExtra: 'Deslizá la barra para elegir. Para garantizar la duración del colchón, siempre se recomienda 10-15kg de más sobre la persona que lo va a utilizar.',
+            min: 20,
+            max: 180,
+            step: 5 
         }
-    }, 800);
+    ];
+
+    // Variables internas
+    let pasoActual = 0;
+    let respuestas = {}; 
+
+    // Elementos visuales
+    const modal = document.getElementById('modal-test');
+    const contenedor = document.getElementById('quiz-contenido');
+    const btnNext = document.getElementById('btn-test-next');
+    const btnPrev = document.getElementById('btn-test-prev');
+    const btnFinal = document.getElementById('btn-test-final');
+
+    // Botón flotante para abrir
+    const btnAbrir = document.getElementById('btn-abrir-test');
+    if(btnAbrir) {
+        btnAbrir.addEventListener('click', () => { modal.style.display = 'flex'; dibujarPaso(); });
+    }
+    
+    // Cerrar modal
+    const btnCerrar = document.getElementById('cerrar-test');
+    if(btnCerrar) {
+        btnCerrar.addEventListener('click', () => { modal.style.display = 'none'; });
+    }
+
+    // Dibuja la pregunta
+    function dibujarPaso() {
+        const pregunta = preguntas[pasoActual];
+        let html = `<h4 style="margin-top:0; color:#555; font-size: 17px; line-height:1.4;">${pregunta.titulo}</h4>`;
+        
+        // DIBUJAR BOTONES
+        if (pregunta.tipo === 'unica' || pregunta.tipo === 'multiple') {
+            pregunta.opciones.forEach(op => {
+                let esSeleccionada = '';
+                if (pregunta.tipo === 'unica') {
+                    esSeleccionada = respuestas[pregunta.id] === op.valor ? 'seleccionada' : '';
+                } else {
+                    const arr = respuestas[pregunta.id] || [];
+                    esSeleccionada = arr.includes(op.valor) ? 'seleccionada' : '';
+                }
+                html += `<button class="quiz-opcion ${esSeleccionada}" data-valor="${op.valor}">${op.texto}</button>`;
+            });
+        } 
+        // DIBUJAR BARRA
+        else if (pregunta.tipo === 'rango') {
+            const valorActual = respuestas[pregunta.id] || 80; 
+            html += `
+                <p style="font-size:13px; color:#666; line-height: 1.4;">${pregunta.textoExtra}</p>
+                <div style="text-align:center; margin: 40px 0;">
+                    <span id="rango-valor" style="font-size: 38px; font-weight: 900; color: #827c34;">${valorActual} kg</span>
+                    <input type="range" id="quiz-rango" min="${pregunta.min}" max="${pregunta.max}" step="${pregunta.step}" value="${valorActual}" style="width:100%; margin-top:20px; accent-color:#827c34; cursor: pointer;">
+                </div>
+            `;
+        }
+        
+        contenedor.innerHTML = html;
+
+        // ACTIVAR CLICS
+        if (pregunta.tipo === 'unica') {
+            document.querySelectorAll('.quiz-opcion').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    document.querySelectorAll('.quiz-opcion').forEach(b => b.classList.remove('seleccionada'));
+                    this.classList.add('seleccionada');
+                    respuestas[pregunta.id] = this.getAttribute('data-valor');
+                    actualizarBotonera();
+                });
+            });
+        } else if (pregunta.tipo === 'multiple') {
+            document.querySelectorAll('.quiz-opcion').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    this.classList.toggle('seleccionada');
+                    let arr = respuestas[pregunta.id] || [];
+                    const val = this.getAttribute('data-valor');
+                    
+                    if (arr.includes(val)) {
+                        arr = arr.filter(item => item !== val); 
+                    } else {
+                        arr.push(val); 
+                    }
+                    respuestas[pregunta.id] = arr;
+                    actualizarBotonera();
+                });
+            });
+        } 
+        else if (pregunta.tipo === 'rango') {
+            const slider = document.getElementById('quiz-rango');
+            const label = document.getElementById('rango-valor');
+            
+            if(!respuestas[pregunta.id]) respuestas[pregunta.id] = slider.value;
+
+            slider.addEventListener('input', function() {
+                label.innerText = this.value + ' kg';
+                respuestas[pregunta.id] = this.value;
+                actualizarBotonera();
+            });
+        }
+
+        actualizarBotonera();
+    }
+
+    // Controles de visibilidad
+    function actualizarBotonera() {
+        btnPrev.style.visibility = pasoActual > 0 ? 'visible' : 'hidden';
+        
+        let tieneRespuesta = false;
+        const pregunta = preguntas[pasoActual];
+        
+        if (pregunta.tipo === 'unica' || pregunta.tipo === 'rango') {
+            tieneRespuesta = respuestas[pregunta.id] !== undefined;
+        } else if (pregunta.tipo === 'multiple') {
+            tieneRespuesta = (respuestas[pregunta.id] && respuestas[pregunta.id].length > 0);
+        }
+        
+        if (pasoActual === preguntas.length - 1) { 
+            btnNext.style.display = 'none';
+            btnFinal.style.display = tieneRespuesta ? 'block' : 'none';
+        } else {
+            btnFinal.style.display = 'none';
+            btnNext.style.display = tieneRespuesta ? 'block' : 'none';
+        }
+    }
+
+    // Navegación
+    btnNext.addEventListener('click', () => { pasoActual++; dibujarPaso(); });
+    btnPrev.addEventListener('click', () => { pasoActual--; dibujarPaso(); });
+
+    // --- B. RESULTADOS FINALES ---
+    btnFinal.addEventListener('click', () => {
+        btnFinal.innerText = "Buscando...";
+        
+        setTimeout(() => {
+            alert("¡Terminaste! Nos falta la lógica final. Respuestas: " + JSON.stringify(respuestas));
+            modal.style.display = 'none';
+            btnFinal.innerText = "Ver resultados";
+            pasoActual = 0; 
+        }, 1500);
+    });
 });
 </script>
