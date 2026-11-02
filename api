@@ -1,0 +1,815 @@
+const APP_ID = '48980';
+const API_ROOT = 'https://api.tiendanube.com/2025-03';
+const TOKEN_URL = 'https://www.tiendanube.com/apps/authorize/token';
+const encoder = new TextEncoder();
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
+function html(message, status = 200) {
+  return new Response(`<!doctype html><meta charset="utf-8"><title>Catálogo Bot</title><p>${message}</p>`, {
+    status,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+  });
+}
+
+function hex(bytes) {
+  return [...new Uint8Array(bytes)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function b64(bytes) {
+  return btoa(String.fromCharCode(...new Uint8Array(bytes)));
+}
+
+function unb64(value) {
+  return Uint8Array.from(atob(value), c => c.charCodeAt(0));
+}
+
+async function hmac(secret, value) {
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return hex(await crypto.subtle.sign('HMAC', key, encoder.encode(value)));
+}
+
+function equal(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let difference = 0;
+  for (let i = 0; i < a.length; i++) difference |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return difference === 0;
+}
+
+async function encryptionKey(env) {
+  const raw = unb64(env.TOKEN_KEY);
+  if (raw.length !== 32) throw new Error('TOKEN_KEY must be 32 bytes in base64');
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+async function encrypt(env, value) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await encryptionKey(env), encoder.encode(JSON.stringify(value)));
+  return JSON.stringify({ iv: b64(iv), data: b64(encrypted) });
+}
+
+async function decrypt(env, value) {
+  const record = JSON.parse(value);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(record.iv) }, await encryptionKey(env), unb64(record.data));
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+function configured(env) {
+  return Boolean(env.DATA && env.CLIENT_SECRET && env.SETUP_PASSWORD && env.TOKEN_KEY && env.API_KEY);
+}
+
+function basicAuthorized(request, password) {
+  const auth = request.headers.get('authorization') || '';
+  if (!auth.startsWith('Basic ')) return false;
+  try {
+    const pair = atob(auth.slice(6));
+    return equal(pair, `admin:${password}`);
+  } catch { return false; }
+}
+
+async function startAuth(request, env) {
+  if (!basicAuthorized(request, env.SETUP_PASSWORD)) {
+    return new Response('Acceso restringido', { status: 401, headers: { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' } });
+  }
+  const timestamp = Date.now().toString();
+  const nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
+  const payload = `${timestamp}.${nonce}`;
+  const signature = await hmac(env.SETUP_PASSWORD, payload);
+  const destination = `https://www.tiendanube.com/apps/${APP_ID}/authorize?state=${encodeURIComponent(`${payload}.${signature}`)}`;
+  return Response.redirect(destination, 302);
+}
+
+async function callback(url, env) {
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+  if (!code || !state) return html('Falta el código o estado de autorización.', 400);
+  const parts = state.split('.');
+  if (parts.length !== 3) return html('Estado de autorización inválido.', 400);
+  const payload = `${parts[0]}.${parts[1]}`;
+  const expected = await hmac(env.SETUP_PASSWORD, payload);
+  if (!equal(parts[2], expected) || Math.abs(Date.now() - Number(parts[0])) > 5 * 60 * 1000) {
+    return html('Autorización vencida o inválida. Iniciá nuevamente desde /setup.', 400);
+  }
+  const exchange = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ client_id: APP_ID, client_secret: env.CLIENT_SECRET, grant_type: 'authorization_code', code }),
+  });
+  if (!exchange.ok) return html('Tiendanube no aceptó la autorización. Iniciá nuevamente desde /setup.', 502);
+  const result = await exchange.json();
+  const storeId = String(result.user_id || result.store_id || '');
+  const scopes = String(result.scope || '');
+  if (!storeId || !result.access_token || !scopes.split(',').map(s => s.trim()).includes('read_products')) {
+    return html('La autorización no incluye lectura de productos.', 400);
+  }
+  if (env.EXPECTED_STORE_ID && storeId !== env.EXPECTED_STORE_ID) {
+    return html('La aplicación se instaló en una tienda distinta a la configurada.', 403);
+  }
+  await env.DATA.put(`installation:${APP_ID}:${storeId}`, await encrypt(env, {
+    access_token: result.access_token, store_id: storeId, scopes, installed_at: new Date().toISOString(),
+  }));
+  await env.DATA.put('active_store_id', storeId);
+  return html(`Autorización completada para la tienda ${storeId}. El token quedó guardado en el servicio.`);
+}
+
+async function privacyWebhook(request, env, type) {
+  const body = await request.text();
+  const received = request.headers.get('x-linkedstore-hmac-sha256') || '';
+  const expected = await hmac(env.CLIENT_SECRET, body);
+  if (!equal(received.toLowerCase(), expected)) return json({ error: 'invalid_signature' }, 401);
+  let payload;
+  try { payload = JSON.parse(body); } catch { return json({ error: 'invalid_json' }, 400); }
+  if (type === 'store-redact' && payload.store_id) {
+    const storeId = String(payload.store_id);
+    await env.DATA.delete(`installation:${APP_ID}:${storeId}`);
+    if (await env.DATA.get('active_store_id') === storeId) await env.DATA.delete('active_store_id');
+  }
+  // This app never reads or stores customer records.
+  return json({ received: true });
+}
+
+async function productLookup(request, url, env) {
+  if (!equal(request.headers.get('x-api-key') || '', env.API_KEY)) return json({ error: 'unauthorized' }, 401);
+  const productId = url.searchParams.get('product_id');
+  const variantId = url.searchParams.get('variant_id');
+  if (!/^\d+$/.test(productId || '') || !/^\d+$/.test(variantId || '')) {
+    return json({ error: 'product_id_and_variant_id_required' }, 400);
+  }
+  const storeId = await env.DATA.get('active_store_id');
+  if (!storeId) return json({ error: 'store_not_connected' }, 503);
+  const saved = await env.DATA.get(`installation:${APP_ID}:${storeId}`);
+  if (!saved) return json({ error: 'store_not_connected' }, 503);
+  const installation = await decrypt(env, saved);
+  const upstream = await fetch(`${API_ROOT}/${storeId}/products/${productId}`, {
+    headers: { authentication: `bearer ${installation.access_token}`, 'user-agent': `Catalogo Bot Almacen de Colchones (${env.CONTACT_EMAIL || 'almacendecolchones.ia@gmail.com'})` },
+  });
+  if (upstream.status === 404) return json({ available: false, reason: 'product_missing' });
+  if (!upstream.ok) return json({ error: 'catalog_unavailable', status: upstream.status }, 502);
+  const product = await upstream.json();
+  const variant = (product.variants || []).find(item => String(item.id) === variantId);
+  if (!variant) return json({ available: false, reason: 'variant_missing' });
+  return json(productDetails(product, variant));
+}
+
+function productDetails(product, variant) {
+  const visible = product.visibility === 'visible' || (product.visibility == null && product.published === true);
+  const stock = variant.stock === null || variant.stock === undefined ? null : Number(variant.stock);
+  const inStock = Number.isFinite(stock) && stock > 0;
+  const description = descriptionForAgent(product);
+  return {
+    available: visible && inStock,
+    reason: !visible ? 'not_visible' : !Number.isFinite(stock) ? 'stock_unknown' : !inStock ? 'out_of_stock' : null,
+    product_id: product.id,
+    variant_id: variant.id,
+    name: product.name?.es || product.name,
+    product_type: liveProductType(product),
+    measure: liveMeasure(product),
+    support_kg: liveSupportKg(product),
+    sensation: liveSensation(product, variant),
+    sensation_source: liveSensationSource(product, variant),
+    sku: variant.sku || null,
+    stock,
+    price: effectivePrice(variant),
+    list_price: variant.price == null ? null : Number(variant.price),
+    promotional_price: variant.promotional_price == null ? null : Number(variant.promotional_price),
+    currency: 'ARS',
+    canonical_url: product.canonical_url || null,
+    description: description.text,
+    description_truncated: description.truncated,
+    description_source: 'tiendanube_live_unreviewed',
+    checked_at: new Date().toISOString(),
+  };
+}
+
+function searchTokens(value) {
+  return normalized(value).replace(/\b\d{2,3}\s*[x×]\s*\d{2,3}(?:\s*[x×]\s*\d{1,3})?\b/g, ' ')
+    .replace(/\b(?:colchon|colchones|sommier|somier|base|bases|de|del|la|el|para|con|plaza|plazas|una|un|dos|cm)\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ').split(/\s+/).filter(token => token.length > 1);
+}
+
+async function findProduct(request, url, env) {
+  if (!equal(request.headers.get('x-api-key') || '', env.API_KEY)) return json({ error: 'unauthorized' }, 401);
+  const query = (url.searchParams.getAll('q').map(value => value.trim())
+    .filter(value => value && !value.includes('{{') && !value.includes('<AI_')).at(-1) || '');
+  const tokens = [...new Set(searchTokens(query))];
+  const requestedType = normalized(url.searchParams.get('type')) || liveProductType({ name: { es: query } });
+  const requestedMeasure = String(url.searchParams.get('measure') || liveMeasure({ name: { es: query } }) || '').trim();
+  if (query.length < 3 || query.length > 150 || tokens.length === 0 ||
+      (requestedType && !['colchon', 'sommier', 'base'].includes(requestedType))) {
+    return json({ error: 'valid_product_name_required' }, 400);
+  }
+  const live = await getLiveProducts(env);
+  if (live.error) return json(live, 502);
+  const candidates = [];
+  for (const product of live.products) {
+    const name = product.name?.es || product.name || '';
+    const type = liveProductType(product);
+    const measure = liveMeasure(product);
+    if (requestedType && type !== requestedType) continue;
+    if (requestedMeasure && !matchesMeasure({ name, measure, commercial_measure: '' }, requestedMeasure)) continue;
+    const nameTokens = new Set(searchTokens(name));
+    if (!tokens.every(token => nameTokens.has(token))) continue;
+    const exactName = normalized(name) === normalized(query);
+    for (const variant of product.variants || []) {
+      const details = productDetails(product, variant);
+      candidates.push({ details, exactName, extraTokens: nameTokens.size - tokens.length });
+    }
+  }
+  candidates.sort((a, b) => Number(b.exactName) - Number(a.exactName) || a.extraTokens - b.extraTokens || a.details.product_id - b.details.product_id);
+  const exact = candidates.filter(item => item.exactName);
+  const pool = exact.length ? exact : candidates;
+  const bedding = beddingCriteria(query);
+  if (bedding.article && !exact.length && (bedding.measure || bedding.height_cm || bedding.commercial_measure ||
+      bedding.material || bedding.pure_material || bedding.perforated || bedding.waterproof || bedding.soft || pool.length !== 1)) {
+    return json({ status: 'search_results', ...emptyFindDetails(), ...beddingResults(live.products, bedding) });
+  }
+  if (pool.length !== 1) return json({ status: pool.length ? 'ambiguous' : 'not_found',
+    matches: pool.slice(0, 5).map(item => ({ product_id: item.details.product_id, variant_id: item.details.variant_id,
+      name: item.details.name, measure: item.details.measure, product_type: item.details.product_type })),
+    match_count: pool.length, checked_at: new Date().toISOString() });
+  return json({ status: 'found', ...pool[0].details });
+}
+
+function emptyFindDetails() {
+  return { available: null, reason: null, product_id: null, variant_id: null, name: null,
+    product_type: null, measure: null, support_kg: null, sensation: null, sensation_source: null,
+    sku: null, stock: null, price: null, list_price: null, promotional_price: null,
+    currency: null, canonical_url: null, description: null, description_truncated: null,
+    description_source: null };
+}
+
+function beddingArticle(text) {
+  const q = normalized(text);
+  if (/\balmohad/.test(q)) return 'almohada';
+  if (/\bsaban/.test(q)) return 'sabanas';
+  if (/\bacolchad/.test(q)) return 'acolchado';
+  if (/\bedredon/.test(q)) return 'edredon';
+  if (/\b(?:protector|cubrecolchon)/.test(q)) return 'protector';
+  if (/\bcubre\s*sommier|\bvincha/.test(q)) return 'cubre_sommier';
+  if (/\b(?:manta|frazada)/.test(q)) return 'manta';
+  return null;
+}
+
+function beddingCriteria(query) {
+  const q = normalized(query).replaceAll('×', 'x');
+  const article = beddingArticle(q);
+  const dimensions = [...q.matchAll(/\b(\d{2,3})\s*x\s*(\d{2,3})(?:\s*x\s*(\d{1,3}))?\b/g)];
+  const pair = dimensions.find(match => Number(match[1]) >= 40 && Number(match[2]) >= 40);
+  const measure = pair ? `${pair[1]}x${pair[2]}` : null;
+  const explicitHeight = q.match(/(?:\b(?:alto|altura|espesor|profundidad)\b[^.]{0,25}?\b|\b)(\d{1,2})\s*cm\s*(?:de\s*)?(?:alto|altura|espesor|profundidad)\b/);
+  const height = pair?.[3] ? Number(pair[3]) : explicitHeight ? Number(explicitHeight[1]) : null;
+  const commercial = /\bking\b/.test(q) ? 'king' : /\bqueen\b/.test(q) ? 'queen' :
+    /\b(?:2|dos)\s*plazas?\b|\bfull\b/.test(q) ? 'full' :
+    /\b(?:1|una)\s*plazas?\b|\btwin\b/.test(q) ? 'twin' : null;
+  const excludeLatex = /\b(?:sin|no)\s+latex\b/.test(q);
+  const material = /\b(?:algodon|cotton)\b/.test(q) ? 'algodon' :
+    /\blatex\b/.test(q) && !excludeLatex ? 'latex' :
+    /\b(?:fibra|vellon|siliconad)/.test(q) ? 'fibra' :
+    /\bmicrofibra\b/.test(q) ? 'microfibra' : null;
+  const color = q.match(/\b(?:blanco|blanca|natural|gris|azul|beige|rosa|negro|negra|crudo|cruda|verde|arena)\b/)?.[0] || null;
+  return {
+    article, measure, height_cm: height, commercial_measure: commercial, material, color,
+    pure_material: /(?:100\s*%|puro|pura)\s*(?:de\s*)?(?:algodon|latex)|(?:algodon|latex)\s*(?:100\s*%|puro|pura)/.test(q),
+    perforated: /\b(?:perforad|perforac|agujer|orific)/.test(q),
+    waterproof: /\bimpermeab|\bwaterproof/.test(q),
+    exclude_latex: excludeLatex,
+    soft: /\b(?:suave|soft|blandit)/.test(q),
+  };
+}
+
+function beddingHeightLimit(description) {
+  const d = normalized(description);
+  const patterns = [
+    /(?:colchon(?:es)?\s+de\s+)?hasta\s+(\d{1,2})\s*cm\s*(?:de\s*)?(?:alto|altura|espesor)/,
+    /(?:alto|altura|espesor)\s*(?:maxima|de|:)?\s*(\d{1,2})\s*cm/,
+    /apto(?:s)?\s+para\s+colchon(?:es)?\s+de\s+hasta\s+(\d{1,2})\s*cm/,
+  ];
+  for (const pattern of patterns) {
+    const match = d.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+function beddingMeasureMatches(product, criteria) {
+  const name = normalized(product.name?.es || product.name).replaceAll('×', 'x');
+  const description = normalized(plainDescription(product)).replaceAll('×', 'x');
+  const text = `${name} ${description}`;
+  if (criteria.measure) {
+    const [a, b] = criteria.measure.split('x').map(Number);
+    const exact = new RegExp(`\\b(?:${a}\\s*x\\s*${b}|${b}\\s*x\\s*${a})\\b`);
+    if (criteria.article !== 'acolchado' && criteria.article !== 'edredon') return exact.test(text);
+  }
+  const cover = criteria.article === 'acolchado' || criteria.article === 'edredon';
+  const size = criteria.commercial_measure ||
+    (cover && criteria.measure === '160x200' ? 'queen' :
+      cover && criteria.measure === '180x200' ? 'king' : null);
+  if (!size) return true;
+  if (size === 'full') return /\b(?:full|2\s*plazas|dos\s*plazas)\b/.test(text);
+  if (size === 'twin') return /\b(?:twin|1\s*plaza|una\s*plaza)\b/.test(text);
+  return new RegExp(`\\b${size}\\b`).test(text);
+}
+
+function beddingAssessment(product, criteria) {
+  const name = product.name?.es || product.name || '';
+  if (beddingArticle(name) !== criteria.article || !beddingMeasureMatches(product, criteria)) return null;
+  const description = normalized(plainDescription(product));
+  const title = normalized(name);
+  const missing = [];
+  const explicitlyLatexFree = /\b(?:sin|libre de|no contiene|ausencia de)\s+latex\b/.test(description);
+  if (criteria.exclude_latex && /\blatex\b/.test(`${title} ${description}`) && !explicitlyLatexFree) return null;
+  if (criteria.exclude_latex && !explicitlyLatexFree) missing.push('sin latex');
+  if (criteria.material === 'algodon' && !/\balgodon\b/.test(description)) missing.push('algodon');
+  if (criteria.material === 'latex' && !/\blatex\b/.test(description)) missing.push('latex');
+  if (criteria.material === 'fibra' && !/\b(?:fibra|vellon|siliconad)/.test(description)) missing.push('fibra');
+  if (criteria.material === 'microfibra' && !/\bmicrofibra\b/.test(description)) missing.push('microfibra');
+  if (criteria.pure_material && criteria.material && !new RegExp(`(?:100\\s*%\\s*(?:de\\s*)?${criteria.material}|${criteria.material}\\s*100\\s*%)`).test(description)) missing.push(`100% ${criteria.material}`);
+  if (criteria.perforated && !/\b(?:perforad|perforac|agujer|orific)/.test(description)) missing.push('perforaciones');
+  if (criteria.waterproof && !/\bimpermeab|\bwaterproof/.test(description)) missing.push('impermeable');
+  if (criteria.soft && !/\b(?:suave|soft|blandit)/.test(`${title} ${description}`)) missing.push('suave');
+  const heightLimit = criteria.height_cm && ['sabanas', 'protector', 'cubre_sommier'].includes(criteria.article) ? beddingHeightLimit(description) : null;
+  if (criteria.height_cm && ['sabanas', 'protector', 'cubre_sommier'].includes(criteria.article) &&
+      (heightLimit === null || heightLimit < criteria.height_cm)) missing.push(`altura de ${criteria.height_cm} cm`);
+  return { missing, height_limit_cm: heightLimit };
+}
+
+function beddingResults(products, criteria) {
+  const verified = [], partial = [], unavailable = [];
+  for (const product of products) {
+    const assessment = beddingAssessment(product, criteria);
+    if (!assessment) continue;
+    for (const variant of product.variants || []) {
+      const details = productDetails(product, variant);
+      const candidate = { ...details, height_limit_cm: assessment.height_limit_cm };
+      const missing = [...assessment.missing];
+      if (criteria.color && !new RegExp(`\\b${criteria.color}\\b`).test(normalized(`${details.name} ${JSON.stringify(variant.values || [])}`))) missing.push(`color ${criteria.color}`);
+      if (!details.available) unavailable.push({ name: details.name, measure: details.measure, reason: details.reason });
+      else if (missing.length) partial.push({ name: details.name, measure: details.measure, missing, product_id: details.product_id, variant_id: details.variant_id });
+      else verified.push(candidate);
+    }
+  }
+  verified.sort((a, b) => (b.price || 0) - (a.price || 0));
+  return { criteria, options: verified.slice(0, 3), verified_count: verified.length,
+    partial: partial.slice(0, 5), partial_count: partial.length, unavailable_count: unavailable.length,
+    checked_at: new Date().toISOString(), note: 'Solo options cumple los requisitos documentados y tiene stock positivo. partial no se debe recomendar como compatible.' };
+}
+
+async function beddingSearch(request, url, env) {
+  if (!equal(request.headers.get('x-api-key') || '', env.API_KEY)) return json({ error: 'unauthorized' }, 401);
+  const query = (url.searchParams.getAll('q').map(value => value.trim()).filter(value => value && !value.includes('{{') && !value.includes('<AI_')).at(-1) || '');
+  if (query.length < 5 || query.length > 200) return json({ error: 'valid_query_required' }, 400);
+  const criteria = beddingCriteria(query);
+  if (!criteria.article) return json({ error: 'bedding_article_required' }, 400);
+  const live = await getLiveProducts(env);
+  if (live.error) return json(live, 502);
+  return json(beddingResults(live.products, criteria));
+}
+
+async function checkCatalog(request, env) {
+  if (!basicAuthorized(request, env.SETUP_PASSWORD)) {
+    return new Response('Acceso restringido', { status: 401, headers: { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' } });
+  }
+  const storeId = await env.DATA.get('active_store_id');
+  if (!storeId) return json({ connected: false, reason: 'store_not_connected' }, 503);
+  const saved = await env.DATA.get(`installation:${APP_ID}:${storeId}`);
+  if (!saved) return json({ connected: false, reason: 'installation_missing' }, 503);
+  const installation = await decrypt(env, saved);
+  const upstream = await fetch(`${API_ROOT}/${storeId}/products?published=true&per_page=1`, {
+    headers: { authentication: `bearer ${installation.access_token}`, 'user-agent': `Catalogo Bot Almacen de Colchones (${env.CONTACT_EMAIL || 'almacendecolchones.ia@gmail.com'})` },
+  });
+  if (!upstream.ok) return json({ connected: false, reason: 'catalog_unavailable', status: upstream.status }, 502);
+  const products = await upstream.json();
+  const product = Array.isArray(products) ? products[0] : null;
+  const variant = product?.variants?.[0];
+  return json({
+    connected: true,
+    store_id: storeId,
+    sample: product ? {
+      product_id: product.id,
+      variant_id: variant?.id || null,
+      name: product.name,
+      visibility: product.visibility || null,
+      canonical_url: product.canonical_url || null,
+      stock: variant?.stock ?? null,
+      price: variant?.price ?? null,
+    } : null,
+    checked_at: new Date().toISOString(),
+  });
+}
+
+function csvCell(value) {
+  const text = value == null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+async function exportCatalog(request, url, env) {
+  if (!basicAuthorized(request, env.SETUP_PASSWORD)) {
+    return new Response('Acceso restringido', { status: 401, headers: { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' } });
+  }
+  const page = Number(url.searchParams.get('page') || '1');
+  if (!Number.isInteger(page) || page < 1 || page > 100) return json({ error: 'invalid_page' }, 400);
+  const storeId = await env.DATA.get('active_store_id');
+  if (!storeId) return json({ error: 'store_not_connected' }, 503);
+  const saved = await env.DATA.get(`installation:${APP_ID}:${storeId}`);
+  if (!saved) return json({ error: 'store_not_connected' }, 503);
+  const installation = await decrypt(env, saved);
+  const upstream = await fetch(`${API_ROOT}/${storeId}/products?page=${page}&per_page=200`, {
+    headers: { authentication: `bearer ${installation.access_token}`, 'user-agent': `Catalogo Bot Almacen de Colchones (${env.CONTACT_EMAIL || 'almacendecolchones.ia@gmail.com'})` },
+  });
+  if (!upstream.ok) return json({ error: 'catalog_unavailable', status: upstream.status }, 502);
+  const products = await upstream.json();
+  if (!Array.isArray(products)) return json({ error: 'unexpected_catalog_response' }, 502);
+  const headings = ['product_id', 'variant_id', 'name', 'sku', 'visibility', 'stock', 'price', 'promotional_price', 'canonical_url', 'variant_values'];
+  const rows = [headings.map(csvCell).join(',')];
+  for (const product of products) {
+    for (const variant of product.variants || []) {
+      rows.push([
+        product.id, variant.id, product.name?.es || product.name, variant.sku,
+        product.visibility || (product.published ? 'visible' : 'hidden'),
+        variant.stock, variant.price, variant.promotional_price, product.canonical_url,
+        variant.values || [],
+      ].map(csvCell).join(','));
+    }
+  }
+  return new Response(`\uFEFF${rows.join('\r\n')}\r\n`, {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="catalogo_tiendanube_pagina_${page}.csv"`,
+      'cache-control': 'no-store',
+      'x-products-on-page': String(products.length),
+    },
+  });
+}
+
+async function catalogAdmin(request, env) {
+  if (!basicAuthorized(request, env.SETUP_PASSWORD)) {
+    return new Response('Acceso restringido', { status: 401, headers: { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' } });
+  }
+  if (request.method === 'GET') {
+    const timestamp = Date.now().toString();
+    const nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
+    const payload = `${timestamp}.${nonce}`;
+    const signature = await hmac(env.SETUP_PASSWORD, payload);
+    const saved = await env.DATA.get('curated_catalog');
+    const count = saved ? JSON.parse(saved).records.length : 0;
+    return new Response(`<!doctype html><meta charset="utf-8"><title>Catálogo curado</title><h1>Catálogo curado</h1><p>Variantes cargadas: ${count}</p><form method="post" enctype="multipart/form-data" action="/admin/catalog"><input type="hidden" name="state" value="${payload}.${signature}"><input type="file" name="catalog" accept=".json,application/json" required><button type="submit">Cargar catálogo</button></form>`, {
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; form-action 'self'; style-src 'unsafe-inline'" },
+    });
+  }
+  if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
+  const form = await request.formData();
+  const state = form.get('state');
+  const parts = typeof state === 'string' ? state.split('.') : [];
+  if (parts.length !== 3) return html('Formulario vencido o inválido.', 400);
+  const payload = `${parts[0]}.${parts[1]}`;
+  if (!equal(parts[2], await hmac(env.SETUP_PASSWORD, payload)) || Math.abs(Date.now() - Number(parts[0])) > 10 * 60 * 1000) {
+    return html('Formulario vencido o inválido. Volvé a abrir /admin/catalog.', 400);
+  }
+  const file = form.get('catalog');
+  if (!file || typeof file.text !== 'function' || file.size > 500_000) return html('Elegí un archivo JSON menor a 500 KB.', 400);
+  let input;
+  try { input = JSON.parse(await file.text()); } catch { return html('El archivo no es un JSON válido.', 400); }
+  if (!Array.isArray(input.records) || input.records.length < 1 || input.records.length > 1000) {
+    return html('El catálogo debe tener entre 1 y 1000 variantes.', 400);
+  }
+  const records = [];
+  const seen = new Set();
+  for (const item of input.records) {
+    const productId = Number(item.product_id);
+    const variantId = Number(item.variant_id);
+    let canonical;
+    try { canonical = new URL(item.canonical_url); } catch { return html('Una URL del catálogo no es válida.', 400); }
+    if (!Number.isSafeInteger(productId) || !Number.isSafeInteger(variantId) || productId < 1 || variantId < 1 || canonical.protocol !== 'https:' || canonical.hostname !== 'www.almacendecolchones.com.ar') {
+      return html('El catálogo contiene un ID o dominio no válido.', 400);
+    }
+    const key = `${productId}:${variantId}`;
+    if (seen.has(key)) return html('El catálogo contiene variantes duplicadas.', 400);
+    seen.add(key);
+    const supportKg = item.support_kg == null ? null : Number(item.support_kg);
+    if (supportKg !== null && (!Number.isFinite(supportKg) || supportKg < 1 || supportKg > 1000)) return html('Soporte por persona no válido.', 400);
+    const short = value => String(value ?? '').slice(0, 500);
+    records.push({
+      product_id: productId, variant_id: variantId, canonical_url: canonical.toString(),
+      name: short(item.name), product_type: short(item.product_type), measure: short(item.measure),
+      commercial_measure: short(item.commercial_measure), support_kg: supportKg,
+      brand: short(item.brand), structure_unverified: short(item.structure_unverified),
+      sensation_unverified: short(item.sensation_unverified),
+    });
+  }
+  await env.DATA.put('curated_catalog', JSON.stringify({ records, imported_at: new Date().toISOString() }));
+  return html(`Catálogo cargado: ${records.length} variantes. La importación no activa recomendaciones ni modifica Tiendanube.`);
+}
+
+function normalized(value) {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+
+function matchesType(record, requested) {
+  const type = normalized(record.product_type);
+  return (requested === 'colchon' && type === 'colchones') ||
+    (requested === 'sommier' && type === 'sommiers') ||
+    (requested === 'base' && type.startsWith('bases'));
+}
+
+function matchesMeasure(record, requested) {
+  const measure = normalized(requested).replaceAll('×', 'x');
+  const category = normalized(record.commercial_measure);
+  const dimensions = normalized(record.measure).replace(/\s/g, '');
+  if (measure === 'dos plazas' || measure === '2 plazas' || measure === 'matrimonial') {
+    return /(^|[,> ])2 plazas(\s|$)/.test(category) || /(?<![\d/])2 plazas\b/.test(normalized(record.name)) ||
+      /^(190|200)x(130|140|150)$/.test(dimensions);
+  }
+  const exact = measure.replace(/\s/g, '').match(/^(\d{2,3})x(\d{2,3})$/);
+  if (exact) {
+    const actual = dimensions.match(/^(\d{2,3})x(\d{2,3})$/);
+    if (!actual) return false;
+    return (Number(actual[1]) === Number(exact[1]) && Number(actual[2]) === Number(exact[2])) ||
+      (Number(actual[1]) === Number(exact[2]) && Number(actual[2]) === Number(exact[1]));
+  }
+  if (measure === 'una plaza' || measure === '1 plaza') return /(^|[,> ])1 plaza(\s|$)/.test(category) || /\b(?:1|una) plaza\b(?!\s*(?:1\/2|y media))/.test(normalized(record.name));
+  if (measure === 'plaza y media' || measure === '1 plaza y media') return /1 plaza 1\/2|plaza y media/.test(category) || /\b1 plaza 1\/2\b|\bplaza y media\b/.test(normalized(record.name));
+  if (measure === 'queen') return /queen/.test(category) || /\bqueen\b/.test(normalized(record.name));
+  if (measure === 'king' || measure === 'king size' || measure === 'tamano king') return /^200x(180|200)$/.test(dimensions) || /\bking size\b/.test(category);
+  return false;
+}
+
+function effectivePrice(variant) {
+  const price = Number(variant.price);
+  const promo = Number(variant.promotional_price);
+  if (!Number.isFinite(price) || price <= 0) return null;
+  return Number.isFinite(promo) && promo > 0 && promo < price ? promo : price;
+}
+
+function plainDescription(product) {
+  const raw = product.description?.es || product.description || '';
+  if (typeof raw !== 'string') return '';
+  const entities = { amp: '&', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—',
+    hellip: '…', bull: '•', iquest: '¿', iexcl: '¡', aacute: 'á', eacute: 'é',
+    iacute: 'í', oacute: 'ó', uacute: 'ú', ntilde: 'ñ', Aacute: 'Á', Eacute: 'É',
+    Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü',
+    trade: '™', reg: '®', copy: '©', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’' };
+  return raw.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]*>/g, ' ')
+    .replace(/&(#(?:x[0-9a-f]+|\d+)|[a-z]+);/gi, (match, key) => {
+      if (key.startsWith('#')) {
+        const number = key[1].toLowerCase() === 'x' ? parseInt(key.slice(2), 16) : Number(key.slice(1));
+        return Number.isInteger(number) && number > 0 && number <= 0x10ffff && !(number >= 0xd800 && number <= 0xdfff)
+          ? String.fromCodePoint(number) : match;
+      }
+      return entities[key] ?? match;
+    }).replace(/\s+/g, ' ').trim();
+}
+
+function descriptionForAgent(product) {
+  const description = plainDescription(product);
+  const faq = description.search(/\b(?:lo que suele preguntarse antes de comprar|preguntas frecuentes|faq)\b/i);
+  const useful = faq >= 0 ? description.slice(0, faq).trim() : description;
+  if (useful.length <= 1400) return { text: useful || null, truncated: faq >= 0 };
+  const limit = useful.slice(0, 1400);
+  const sentence = Math.max(limit.lastIndexOf('. '), limit.lastIndexOf('? '), limit.lastIndexOf('! '));
+  const word = limit.lastIndexOf(' ');
+  const cut = sentence >= 1100 ? sentence + 1 : word > 1200 ? word : 1400;
+  return { text: `${limit.slice(0, cut).trimEnd()}…`, truncated: true };
+}
+
+function liveSupportKg(product) {
+  const description = normalized(plainDescription(product));
+  // Accept only an explicit per-person capacity. Variant.weight is shipping weight, not support.
+  const patterns = [
+    /(?:soporta|soporte|capacidad)(?: de peso)?(?: de| hasta)?\s*(\d{2,3})\s*kg\s*(?:por persona|por plaza|individual)/,
+    /(?:peso maximo|usuarios? de hasta|hasta)\s*(\d{2,3})\s*kg\s*por lado(?:,?\s*por persona)?/,
+    /(\d{2,3})\s*kg\s*(?:por persona|por plaza|individual)/,
+  ];
+  for (const pattern of patterns) {
+    const match = description.match(pattern);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+function canonicalSensation(value) {
+  const text = normalized(value);
+  if (/^(extra firme|muy firme|extrafirme)$/.test(text)) return 'extra firme';
+  if (/^(firme|duro|dura)$/.test(text)) return 'firme';
+  if (/^(medio|media|intermedio|intermedia)$/.test(text)) return 'intermedia';
+  if (/^(suave|soft|blando|blanda)$/.test(text)) return 'suave';
+  return null;
+}
+
+function variantSensation(product, variant) {
+  if (!variant) return null;
+  const attributes = Array.isArray(product.attributes) ? product.attributes : [];
+  const values = Array.isArray(variant.values) ? variant.values : [];
+  for (let i = 0; i < Math.min(attributes.length, values.length); i++) {
+    const rawName = attributes[i];
+    const label = normalized(typeof rawName === 'string' ? rawName : (rawName?.es || rawName?.en || rawName?.pt || ''));
+    if (label !== 'sensacion' && label !== 'firmeza') continue;
+    const rawValue = values[i];
+    return canonicalSensation(typeof rawValue === 'string' ? rawValue : (rawValue?.es || rawValue?.en || rawValue?.pt || ''));
+  }
+  return null;
+}
+
+function liveSensation(product, variant) {
+  const fromVariant = variantSensation(product, variant);
+  if (fromVariant) return fromVariant;
+  const description = normalized(plainDescription(product));
+  const match = description.match(/(?:firmeza|sensacion)\s*(?::|-|\s)\s*(extra firme|muy firme|extrafirme|firme|intermedia|intermedio|media|medio|suave|soft)\b/);
+  return match ? canonicalSensation(match[1]) : null;
+}
+
+function liveSensationSource(product, variant) {
+  if (variantSensation(product, variant)) return 'tiendanube_variant';
+  return liveSensation(product) ? 'tiendanube_description' : null;
+}
+
+function nearbySensation(requested, candidate) {
+  const order = ['suave', 'intermedia', 'firme', 'extra firme'];
+  const requestedIndex = order.indexOf(requested);
+  const candidateIndex = order.indexOf(candidate);
+  return requestedIndex >= 0 && candidateIndex >= 0 && Math.abs(requestedIndex - candidateIndex) === 1;
+}
+
+function priceSpread(items, count = 3) {
+  if (items.length <= count) return [...items];
+  if (count === 1) return [items[0]];
+  if (count === 2) return [items[0], items.at(-1)];
+  return [items[0], items[Math.floor((items.length - 1) / 2)], items.at(-1)];
+}
+
+function liveProductType(product) {
+  const name = normalized(product.name?.es || product.name);
+  if (/^(colchon|colchones)\b/.test(name)) return 'colchon';
+  if (/^(sommier|somier)\b/.test(name)) return 'sommier';
+  if (/^(base|bases)\b/.test(name)) return 'base';
+  return null;
+}
+
+function liveMeasure(product) {
+  const name = normalized(product.name?.es || product.name).replaceAll('×', 'x');
+  const exact = name.match(/\b(\d{2,3})\s*x\s*(\d{2,3})(?:\s*x\s*\d{1,3})?\b/);
+  if (exact) return `${exact[1]}x${exact[2]}`;
+  if (/\b2 plazas\b|\bdos plazas\b|\bmatrimonial\b/.test(name)) return '2 plazas';
+  if (/\b1 plaza 1\/2\b|\bplaza y media\b/.test(name)) return 'plaza y media';
+  if (/\b1 plaza\b|\buna plaza\b/.test(name)) return '1 plaza';
+  if (/\bqueen\b/.test(name)) return 'queen';
+  if (/\bking\b/.test(name)) return 'king';
+  return '';
+}
+
+async function getLiveProducts(env) {
+  const storeId = await env.DATA.get('active_store_id');
+  const saved = storeId && await env.DATA.get(`installation:${APP_ID}:${storeId}`);
+  if (!saved) return { error: 'store_not_connected' };
+  const installation = await decrypt(env, saved);
+  const headers = { authentication: `bearer ${installation.access_token}`,
+    'user-agent': `Catalogo Bot Almacen de Colchones (${env.CONTACT_EMAIL || 'almacendecolchones.ia@gmail.com'})` };
+  async function fetchPage(page) {
+    const upstream = await fetch(`${API_ROOT}/${storeId}/products?page=${page}&per_page=200`, { headers });
+    if (!upstream.ok) return { error: 'catalog_unavailable', status: upstream.status };
+    const batch = await upstream.json();
+    if (!Array.isArray(batch)) return { error: 'unexpected_catalog_response' };
+    return { batch };
+  }
+  const first = await fetchPage(1);
+  if (first.error) return first;
+  const products = [...first.batch];
+  if (first.batch.length < 200) return { products };
+  // Read the next pages concurrently while preserving order and the complete-catalog check.
+  for (let start = 2; start <= 20; start += 3) {
+    const pages = Array.from({ length: Math.min(3, 21 - start) }, (_, i) => start + i);
+    const results = await Promise.all(pages.map(fetchPage));
+    for (const result of results) {
+      if (result.error) return result;
+      products.push(...result.batch);
+      if (result.batch.length < 200) return { products };
+    }
+  }
+  return { error: 'catalog_too_large' };
+}
+async function linkDiagnostic(request, url, env) {
+  if (!basicAuthorized(request, env.SETUP_PASSWORD)) return new Response('Acceso restringido', {
+    status: 401, headers: { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' },
+  });
+  const productId = url.searchParams.get('product_id');
+  if (!/^\d+$/.test(productId || '')) return json({ error: 'product_id_required' }, 400);
+  const storeId = await env.DATA.get('active_store_id');
+  const saved = storeId && await env.DATA.get(`installation:${APP_ID}:${storeId}`);
+  if (!saved) return json({ error: 'store_not_connected' }, 503);
+  const installation = await decrypt(env, saved);
+  const upstream = await fetch(`${API_ROOT}/${storeId}/products/${productId}`, {
+    headers: { authentication: `bearer ${installation.access_token}`, 'user-agent': `Catalogo Bot Almacen de Colchones (${env.CONTACT_EMAIL || 'almacendecolchones.ia@gmail.com'})` },
+  });
+  if (!upstream.ok) return json({ api_status: upstream.status });
+  const product = await upstream.json();
+  let storefront;
+  try {
+    const response = await fetch(product.canonical_url, { method: 'GET', redirect: 'follow' });
+    storefront = { status: response.status, final_url: response.url, content_type: response.headers.get('content-type') };
+    await response.body?.cancel();
+  } catch (error) { storefront = { error: String(error?.name || 'fetch_failed') }; }
+  return json({ api_status: upstream.status, visibility: product.visibility, canonical_url: product.canonical_url, storefront });
+}
+
+async function recommendations(request, url, env, admin = false) {
+  if (admin ? !basicAuthorized(request, env.SETUP_PASSWORD) : !equal(request.headers.get('x-api-key') || '', env.API_KEY)) {
+    return new Response('Acceso restringido', { status: 401, headers: admin ? { 'www-authenticate': 'Basic realm="Catalogo Bot"', 'cache-control': 'no-store' } : { 'cache-control': 'no-store' } });
+  }
+  const type = normalized(url.searchParams.get('type'));
+  const measure = url.searchParams.get('measure') || '';
+  const weightText = url.searchParams.get('weight_kg');
+  const weight = weightText ? Number(weightText) : null;
+  const sensationText = url.searchParams.get('sensation');
+  const sensation = sensationText ? canonicalSensation(sensationText) : null;
+  const excludeSlugs = new Set((url.searchParams.get('exclude_slugs') || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean));
+  if (!['colchon', 'sommier', 'base'].includes(type) || !measure || (type !== 'base' && (!Number.isFinite(weight) || weight <= 0 || weight > 500))) {
+    return json({ error: 'type_measure_and_weight_required' }, 400);
+  }
+  if (sensationText && !sensation) return json({ error: 'invalid_sensation' }, 400);
+  const live = await getLiveProducts(env);
+  if (live.error) return json(live, 502);
+  const eligible = [];
+  const needsReview = [];
+  let excludedOutOfStock = 0;
+  for (const product of live.products) {
+    if (product.visibility !== 'visible') continue;
+    for (const variant of product.variants || []) {
+      const productType = liveProductType(product);
+      const size = liveMeasure(product);
+      const measureRecord = { name: product.name?.es || product.name, measure: size, commercial_measure: '' };
+      if (productType !== type || !matchesMeasure(measureRecord, measure)) continue;
+      const supportKg = liveSupportKg(product);
+      if (type !== 'base' && supportKg === null) {
+        needsReview.push({ product_id: product.id, variant_id: variant.id, missing: 'support_kg' });
+        continue;
+      }
+      if (type !== 'base' && supportKg < weight) continue;
+      const optionSensation = liveSensation(product, variant);
+      const stock = variant.stock === null || variant.stock === undefined ? null : Number(variant.stock);
+      const price = effectivePrice(variant);
+      if (!Number.isFinite(stock) || stock <= 0) { excludedOutOfStock++; continue; }
+      if (price === null) continue;
+      const link = product.canonical_url;
+      try { const u = new URL(link); if (u.protocol !== 'https:' || u.hostname !== 'www.almacendecolchones.com.ar' || !/^\/productos\/[^/]+\/?$/.test(u.pathname) || u.search || u.hash || excludeSlugs.has(u.pathname.split('/')[2].toLowerCase())) continue; } catch { continue; }
+      eligible.push({ product_id: product.id, variant_id: variant.id, name: product.name?.es || product.name,
+        measure: size, support_kg: supportKg, support_source: 'tiendanube_description',
+        sensation: optionSensation, sensation_source: liveSensationSource(product, variant),
+        sensation_match: sensation ? optionSensation === sensation : null,
+        description: descriptionForAgent(product).text,
+        description_truncated: descriptionForAgent(product).truncated,
+        description_source: 'tiendanube_live_unreviewed',
+        stock, price, currency: 'ARS', url: link });
+    }
+  }
+  eligible.sort((a, b) => b.price - a.price);
+  let options;
+  let exactSensationCount = null;
+  let nearbySensationCount = null;
+  if (sensation) {
+    const exact = eligible.filter(item => item.sensation_match);
+    const nearby = eligible.filter(item => nearbySensation(sensation, item.sensation));
+    exactSensationCount = exact.length;
+    nearbySensationCount = nearby.length;
+    options = exact.length >= 3 ? priceSpread(exact) : [...exact, ...priceSpread(nearby, 3 - exact.length)];
+    options.sort((a, b) => b.price - a.price);
+  } else options = priceSpread(eligible);
+  return json({ options, available_count: eligible.length, needs_review: needsReview.slice(0, 25),
+    needs_review_count: needsReview.length, excluded_out_of_stock_count: excludedOutOfStock,
+    requested_sensation: sensation, exact_sensation_count: exactSensationCount,
+    nearby_sensation_count: nearbySensationCount,
+    selection_status: sensation && options.length === 0 ? 'no_compatible_sensation' : options.length === 0 ? 'no_options' : 'options_found',
+    link_verification: 'canonical_url_from_tiendanube_api',
+    complete: options.length > 0 && options.length === Math.min(3, sensation ? exactSensationCount + nearbySensationCount : eligible.length),
+    checked_at: new Date().toISOString(),
+    note: 'La web devuelve 403 a este Worker. No se verificó el HTTP público de cada enlace. La sensación se extrae de la descripción actual de Tiendanube cuando figura explícita. La descripción no está verificada editorialmente.' });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (url.pathname === '/health' && request.method === 'GET') return json({ ok: true });
+    if (!configured(env)) return json({ error: 'service_not_configured' }, 503);
+    try {
+      if (url.pathname === '/setup' && request.method === 'GET') return startAuth(request, env);
+      if (url.pathname === '/oauth/callback' && request.method === 'GET') return callback(url, env);
+      if (url.pathname === '/admin/check' && request.method === 'GET') return checkCatalog(request, env);
+      if (url.pathname === '/admin/export' && request.method === 'GET') return exportCatalog(request, url, env);
+      if (url.pathname === '/admin/catalog' && (request.method === 'GET' || request.method === 'POST')) return catalogAdmin(request, env);
+      if (url.pathname === '/admin/link-check' && request.method === 'GET') return linkDiagnostic(request, url, env);
+      if (url.pathname === '/admin/recommend' && request.method === 'GET') return recommendations(request, url, env, true);
+      if (url.pathname === '/api/recommend' && request.method === 'GET') return recommendations(request, url, env);
+      if (url.pathname === '/api/product' && request.method === 'GET') return productLookup(request, url, env);
+      if (url.pathname === '/api/find' && request.method === 'GET') return findProduct(request, url, env);
+      if (url.pathname === '/api/bedding-search' && request.method === 'GET') return beddingSearch(request, url, env);
+      const privacy = /^\/privacy\/(store-redact|customer-redact|customer-data-request)$/.exec(url.pathname);
+      if (privacy && request.method === 'POST') return privacyWebhook(request, env, privacy[1]);
+      return json({ error: 'not_found' }, 404);
+    } catch {
+      return json({ error: 'internal_error' }, 500);
+    }
+  },
+};
