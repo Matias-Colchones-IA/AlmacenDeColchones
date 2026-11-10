@@ -204,7 +204,8 @@ window.addEventListener('load', function() {
 .js-payment-discount-price-product, 
 .payment-discount-price-product,
 .js-max-installments-container,
-.js-installment-amount {
+.js-installment-amount,
+.js-price-display {
     visibility: hidden;
     opacity: 0;
 }
@@ -221,15 +222,14 @@ window.addEventListener('load', function() {
 
 <script>
   /* --------------------------------------------------------------------------
-     A. RADAR 1: LIMPIEZA DE DECIMALES EN PRECIOS NATIVOS Y CUOTAS
-     Extirpa el ",00" o ",XX" de las pastillas y las cuotas.
-  -------------------------------------------------------------------------- */
+     A. RADAR 1: LIMPIEZA DE DECIMALES EN PRECIOS NATIVOS, CUOTAS Y PRECIO PRINCIPAL
+     -------------------------------------------------------------------------- */
 (function() {
     function procesarYMostrarPrecios() {
-        // ACÁ ESTÁ LA CLAVE: Agregamos las clases de las cuotas a la búsqueda
-        const precios = document.querySelectorAll('.js-payment-discount-price-product, .payment-discount-price-product, .js-max-installments-container, .js-installment-amount');
+        // Agregamos .js-price-display para que limpie también el precio grande principal
+        const precios = document.querySelectorAll('.js-payment-discount-price-product, .payment-discount-price-product, .js-max-installments-container, .js-installment-amount, .js-price-display');
         precios.forEach(el => {
-            // Busca si hay una coma seguida de dos números (ej: ,67 o ,00)
+            // Busca si hay una coma seguida de dos números (ej: ,80 o ,00)
             if (/,(\d{2})/.test(el.innerHTML)) {
                 el.classList.remove('precio-limpio-visible');
                 el.innerHTML = el.innerHTML.replace(/,\d{2}/g, '');
@@ -258,14 +258,13 @@ window.addEventListener('load', function() {
 
     // Seguro anti-internet lenta: muestra todo sí o sí a los 2 segundos
     setTimeout(() => {
-        document.querySelectorAll('.js-payment-discount-price-product, .payment-discount-price-product, .js-max-installments-container, .js-installment-amount').forEach(el => el.classList.add('precio-limpio-visible'));
+        document.querySelectorAll('.js-payment-discount-price-product, .payment-discount-price-product, .js-max-installments-container, .js-installment-amount, .js-price-display').forEach(el => el.classList.add('precio-limpio-visible'));
     }, 2000);
 })();
 
   /* --------------------------------------------------------------------------
      B. RADAR 2: LIMPIEZA EN CAJAS PERSONALIZADAS DE CUOTAS
-     Mismo proceso pero aplicado a la grilla custom creada en CSS para el celular.
-  -------------------------------------------------------------------------- */
+     -------------------------------------------------------------------------- */
 (function() {
     function limpiarDecimalesCustom() {
         var precios = document.querySelectorAll('.custom-price-value');
@@ -381,7 +380,7 @@ window.addEventListener('load', function() {
                             </div>
                             <svg class="icono-tarjeta-generica mostrar-en-movil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" ry="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
                         </div>
-                        <div class="bf-textos"><span class="bf-titulo">Hasta 6 cuotas sin interés</span><a href="/medios-de-pago/" class="bf-link">Ver tarjetas &rarr;</a></div>
+                        <div class="bf-textos"><span class="bf-titulo">Hasta 9 cuotas sin interés</span><a href="/medios-de-pago/" class="bf-link">Ver tarjetas &rarr;</a></div>
                     </div>
                     <div class="bf-separador"></div>
                     
@@ -437,7 +436,7 @@ window.addEventListener('load', function() {
 #modal-test, #modal-test * { font-family: 'Manrope', sans-serif !important; }
 
 /* Contenedor principal del bot */
-.btn-flotante-nubi-wrapper { position: fixed; bottom: 115px; right: 25px; width: 210px; z-index: 99998; animation: flotar-suave 3.5s ease-in-out infinite; filter: drop-shadow(0 6px 15px rgba(0,0,0,0.15)); will-change: transform; }
+.btn-flotante-nubi-wrapper { position: fixed; bottom: 115px; right: 25px; width: 210px; z-index: 990; animation: flotar-suave 3.5s ease-in-out infinite; filter: drop-shadow(0 6px 15px rgba(0,0,0,0.15)); will-change: transform; }
 .btn-flotante-nubi-wrapper img { width: 100%; height: auto; display: block; cursor: pointer; transition: transform 0.3s ease; }
 .btn-flotante-nubi-wrapper img:hover { transform: scale(1.05); }
 .btn-flotante-nubi-wrapper:hover { animation-play-state: paused; }
@@ -451,20 +450,20 @@ window.addEventListener('load', function() {
 /* REGLAS PARA CELULARES */
 @media (max-width: 768px) { 
     .btn-flotante-nubi-wrapper { 
-        width: 160px; 
-        bottom: 98px; 
+        width: 150px; 
+        bottom: 145px; 
         right: 15px; 
         animation: none !important; 
         filter: none !important; 
     } 
 }
 
-/* Estilos del Cuestionario (Con anulacion de Lag tactil) */
+/* Estilos del Cuestionario */
 .quiz-opcion { display: flex; align-items: center; gap: 12px; width: 100%; padding: 16px; margin-bottom: 12px; border: 2px solid #eaeaea; border-radius: 12px; background: white; cursor: pointer; text-align: left; font-size: 15px; color: #333; font-weight: 600; transition: all 0.2s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .quiz-opcion.seleccionada { border-color: #827c34; background: #f1ebd8; }
 
-/* Nuevo Boton WhatsApp Anti-Bloqueo Celulares */
-.btn-memoria-wpp { position: fixed; bottom: 30px; right: 15px; background: #25D366; color: white; padding: 12px 18px; border-radius: 30px; cursor: pointer; z-index: 2147483647; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-weight: bold; font-family: 'Manrope', sans-serif; font-size: 14px; display: flex; align-items: center; gap: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; transition: transform 0.1s ease; }
+/* Boton WhatsApp Post-Busqueda */
+.btn-memoria-wpp { position: fixed; bottom: 30px; right: 15px; background: #25D366; color: white; padding: 12px 18px; border-radius: 30px; cursor: pointer; z-index: 990; box-shadow: 0 4px 15px rgba(0,0,0,0.3); font-weight: bold; font-family: 'Manrope', sans-serif; font-size: 14px; display: flex; align-items: center; gap: 10px; text-decoration: none; -webkit-tap-highlight-color: transparent; transition: transform 0.1s ease; }
 .btn-memoria-wpp:active { transform: scale(0.95); }
 </style>
 
@@ -525,7 +524,6 @@ window.addEventListener('load', function() {
         estiloOcultarNativo.innerHTML = `.whatsapp-icon, svg.whatsapp-icon, a:has(.whatsapp-icon), .js-btn-whatsapp, .js-whatsapp-message, .whatsapp-floating, #contenedor-nubi { display: none !important; }`;
         document.head.appendChild(estiloOcultarNativo);
 
-        // Estructura de Enlace Nativo Puro - Imposible de bloquear por celulares
         let btnContainer = document.createElement('div');
         btnContainer.innerHTML = `
             <a href="https://wa.me/5492235773783?text=${savedWppMsg}" class="btn-memoria-wpp">
@@ -535,7 +533,6 @@ window.addEventListener('load', function() {
         `;
         document.body.appendChild(btnContainer);
 
-        // La crucita anula el link y cierra el cartel
         document.getElementById('cerrar-wpp-flotante').addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
@@ -689,7 +686,6 @@ window.addEventListener('load', function() {
         
         let linkWpp = "https://wa.me/5492235773783?text=" + armarMensajeWhatsApp(medida, resp);
         
-        // El boton de asesor ahora tambien es nativo
         contenedor.innerHTML = `<div style="text-align: center; padding: 10px 0;">
             <h3 style="color: #333; font-size: 22px; font-weight: 800; margin-bottom: 20px;">Encontramos 0 colchones</h3>
             <p style="color: #555; font-size: 14px; text-align: left; margin-bottom: 25px;">No encontramos coincidencia exacta en medida <b>${medida}</b> con tus preferencias. <br><br>Hablá con un experto por WhatsApp y te ayudamos con la decisión.</p>
